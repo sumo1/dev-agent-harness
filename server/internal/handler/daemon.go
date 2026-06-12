@@ -1617,6 +1617,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if json.Unmarshal(task.Context, &gp) == nil && gp.Type == service.GoalPlanningContextType {
 			resp.GoalPlanningRunID = gp.GoalRunID
 			resp.GoalPlanningGoal = gp.Goal
+			resp.GoalPlanningAutofix = gp.Autofix
 			resp.GoalTitle = gp.GoalTitle
 			if resp.WorkspaceID == "" {
 				resp.WorkspaceID = gp.WorkspaceID

@@ -6,6 +6,26 @@
     "empty_hint": "이슈를 만들어 시작하세요.",
     "move_failed": "이슈를 이동하지 못했습니다"
   },
+  "autofix_page": {
+    "new_issue": "새 이슈",
+    "loading": "불러오는 중…",
+    "empty_detail": "이슈를 선택하면 상세 정보가 표시됩니다.",
+    "no_description": "설명이 없습니다.",
+    "jump_to_assistant": "어시스턴트 세션 열기",
+    "view_pr": "풀 리퀘스트 보기",
+    "create_placeholder": "이슈를 설명하고 스크린샷을 붙여넣으세요…",
+    "create": "생성",
+    "creating": "생성 중…",
+    "uploading": "업로드 중…",
+    "cancel": "취소",
+    "create_failed": "이슈를 생성하지 못했습니다",
+    "state": {
+      "not_started": "자동 수정 시작 전",
+      "running": "자동 수정 진행 중",
+      "completed": "자동 수정 완료",
+      "needs_info": "추가 정보 필요"
+    }
+  },
   "status": {
     "backlog": "백로그",
     "todo": "할 일",

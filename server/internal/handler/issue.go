@@ -2270,7 +2270,42 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Auto-fix: a project-bound issue spawns a goal_run that plans the
+	// file-issue → fix → verify → open-PR DAG. Fail-soft — the issue is already
+	// created; if no PMO is configured or planning dispatch fails, autofix simply
+	// does not start (the frontend shows "未启动") and no error surfaces here.
+	h.maybeStartAutofix(r.Context(), issue)
+
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// maybeStartAutofix kicks off the auto-fix goal_run and links it back to the
+// issue metadata. The gate (GoalService.ShouldAutofixIssue) is the single source
+// of truth — the cheap "issue bound to a project" check; planner availability is
+// decided inside StartAutofixGoalRun. Every failure path is silent (logged, not
+// returned): the issue creation already succeeded and must not be rolled back by
+// an autofix that could not start (design §4 risk 2).
+func (h *Handler) maybeStartAutofix(ctx context.Context, issue db.Issue) {
+	if !h.GoalService.ShouldAutofixIssue(issue) {
+		return
+	}
+
+	run, err := h.GoalService.StartAutofixGoalRun(ctx, issue)
+	if err != nil {
+		slog.Info("autofix did not start",
+			"issue_id", uuidToString(issue.ID),
+			"reason", err.Error(),
+		)
+		return
+	}
+
+	if err := h.GoalService.LinkAutofixGoalRun(ctx, issue, run.ID); err != nil {
+		slog.Error("autofix: link goal run to issue metadata",
+			"issue_id", uuidToString(issue.ID),
+			"goal_run_id", uuidToString(run.ID),
+			"error", err,
+		)
+	}
 }
 
 type UpdateIssueRequest struct {

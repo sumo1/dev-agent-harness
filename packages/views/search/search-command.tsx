@@ -33,7 +33,6 @@ import type {
 } from "@multica/core/types";
 import { api } from "@multica/core/api";
 import {
-  openCreateIssueWithPreference,
   selectRecentIssues,
   useRecentIssuesStore,
 } from "@multica/core/issues/stores";
@@ -240,7 +239,9 @@ export function SearchCommand() {
         icon: Plus,
         keywords: ["new", "issue", "create", "add"],
         onSelect: () => {
-          openCreateIssueWithPreference();
+          // Creating an issue is an inline form on the Issues page (no modal).
+          // Navigate there; the page owns the create affordance.
+          push(p.issues());
           setOpen(false);
         },
       },
@@ -321,7 +322,7 @@ export function SearchCommand() {
     );
 
     return items;
-  }, [currentIssue, getShareableUrl, pathname, setOpen, setTheme, theme, t]);
+  }, [currentIssue, getShareableUrl, pathname, setOpen, setTheme, theme, t, push, p]);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();

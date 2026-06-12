@@ -14,6 +14,29 @@
 
 const encode = (id: string) => encodeURIComponent(id);
 
+/**
+ * Optional session locator for the assistant page. Either resolves to a
+ * specific chat session directly (`sessionId`) or carries a `goalRunId` the
+ * assistant page resolves to that goal_run's discussion `chat_session_id`.
+ * Transported as a query param so it survives the shared NavigationAdapter
+ * (no next/react-router import in shared code).
+ */
+export const ASSISTANT_GOAL_RUN_PARAM = "goal_run_id";
+export const ASSISTANT_SESSION_PARAM = "session_id";
+
+export interface AssistantLocator {
+  goalRunId?: string;
+  sessionId?: string;
+}
+
+function assistantQuery(locator?: AssistantLocator): string {
+  const params = new URLSearchParams();
+  if (locator?.goalRunId) params.set(ASSISTANT_GOAL_RUN_PARAM, locator.goalRunId);
+  if (locator?.sessionId) params.set(ASSISTANT_SESSION_PARAM, locator.sessionId);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 function workspaceScoped(slug: string) {
   const ws = `/${encode(slug)}`;
   return {
@@ -32,7 +55,7 @@ function workspaceScoped(slug: string) {
     squadDetail: (id: string) => `${ws}/squads/${encode(id)}`,
     inbox: () => `${ws}/inbox`,
     myIssues: () => `${ws}/my-issues`,
-    assistant: () => `${ws}/assistant`,
+    assistant: (locator?: AssistantLocator) => `${ws}/assistant${assistantQuery(locator)}`,
     tasks: () => `${ws}/tasks`,
     runtimes: () => `${ws}/runtimes`,
     runtimeDetail: (id: string) => `${ws}/runtimes/${encode(id)}`,

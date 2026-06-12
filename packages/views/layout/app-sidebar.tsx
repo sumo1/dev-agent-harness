@@ -26,20 +26,18 @@ import {
   Plus,
   Check,
   BookOpenText,
-  SquarePen,
   BarChart3,
   X,
   Zap,
   MessageSquare,
   Target,
+  ListTodo,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@multica/ui/components/ui/collapsible";
 import { StatusIcon } from "../issues/components/status-icon";
-import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
-import { openCreateIssueWithPreference } from "@multica/core/issues/stores/create-mode-store";
 import {
   Sidebar,
   SidebarContent,
@@ -145,6 +143,7 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
 // Roles": the member/role configuration center (Agent = L1 role).
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
   { key: "tasks", labelKey: "tasks", icon: Target },
+  { key: "issues", labelKey: "issues", icon: ListTodo },
   { key: "agents", labelKey: "roles", icon: Bot },
   { key: "assistant", labelKey: "assistant", icon: MessageSquare },
   { key: "autopilots", labelKey: "autopilots", icon: Zap },
@@ -156,12 +155,6 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "skills", labelKey: "skills", icon: BookOpenText },
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
-
-function DraftDot() {
-  const hasDraft = useIssueDraftStore((s) => !!(s.draft.title || s.draft.description));
-  if (!hasDraft) return null;
-  return <span className="absolute top-0 right-0 size-1.5 rounded-full bg-brand" />;
-}
 
 /**
  * Presentational pin row. The `label` and `iconNode` are computed by the
@@ -440,10 +433,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     },
   });
 
-  // Global "C" shortcut: opens whichever create mode the user landed on last
-  // (agent vs manual), persisted in useCreateModeStore. The mode switch lives
-  // inside both modal footers so users can flip without remembering which
-  // shortcut goes where — `c` always means "open the create flow I prefer".
+  // Global "C" shortcut: navigate to the Issues page, where creating an issue
+  // is an inline form at the top of the list (not a modal). The old shortcut
+  // opened a create-issue modal; that entry point was removed in favour of the
+  // inline create flow, so the affordance is preserved here as navigation.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "c" && e.key !== "C") return;
@@ -457,16 +450,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
       if (isEditable) return;
       if (useModalStore.getState().modal) return;
       e.preventDefault();
-      // Auto-fill project when on a project detail page. The manual form
-      // consumes `project_id`; quick-create also honours it as a seed for
-      // its project picker, so passing it through is safe for both modes.
-      const projectMatch = pathname.match(/^\/[^/]+\/projects\/([^/]+)$/);
-      const data = projectMatch ? { project_id: projectMatch[1] } : undefined;
-      openCreateIssueWithPreference(data);
+      push(p.issues());
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [pathname]);
+  }, [push, p]);
 
   return (
       <Sidebar variant="inset">
@@ -593,26 +581,13 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
               </DropdownMenu>
             </SidebarMenuItem>
           </SidebarMenu>
-          <SidebarMenu>
-            {searchSlot && (
+          {searchSlot && (
+            <SidebarMenu>
               <SidebarMenuItem>
                 {searchSlot}
               </SidebarMenuItem>
-            )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="text-muted-foreground"
-                onClick={() => openCreateIssueWithPreference()}
-              >
-                <span className="relative">
-                  <SquarePen />
-                  <DraftDot />
-                </span>
-                <span>{t(($) => $.sidebar.new_issue)}</span>
-                <kbd className="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">{t(($) => $.sidebar.new_issue_shortcut)}</kbd>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+            </SidebarMenu>
+          )}
         </SidebarHeader>
 
         {/* Navigation */}

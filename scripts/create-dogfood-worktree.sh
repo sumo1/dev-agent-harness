@@ -78,9 +78,29 @@ fi
 
 git -C "$repo_root" worktree add -b "$branch" "$target_dir" "$base_ref"
 
+# Dogfooding isolates the git worktree and the app ports, but SHARES the control
+# plane's database — the candidate must see the same live tables the control
+# plane dispatches against (that is the whole point of dogfooding on real data).
+# So we reuse the control checkout's DATABASE_URL instead of minting a fresh DB.
+# Precedence: explicit REUSE_DATABASE_URL > control checkout's .env DATABASE_URL.
+reuse_db_url="${REUSE_DATABASE_URL:-}"
+if [ -z "$reuse_db_url" ] && [ -f "${repo_root}/.env" ]; then
+  reuse_db_url="$(
+    set -a
+    # shellcheck disable=SC1091
+    . "${repo_root}/.env" >/dev/null 2>&1 || true
+    set +a
+    printf '%s' "${DATABASE_URL:-}"
+  )"
+fi
+
+if [ -n "$reuse_db_url" ]; then
+  echo "    reuse DB:  ${reuse_db_url}"
+fi
+
 (
   cd "$target_dir"
-  bash scripts/init-worktree-env.sh .env.worktree
+  REUSE_DATABASE_URL="$reuse_db_url" bash scripts/init-worktree-env.sh .env.worktree
 )
 
 cat <<EOF

@@ -64,6 +64,10 @@ func buildGoalPlanningPrompt(task Task) string {
 	b.WriteString("Goal:\n")
 	fmt.Fprintf(&b, "%s\n\n", task.GoalPlanningGoal)
 
+	if task.GoalPlanningAutofix {
+		writeAutofixPlanningGuidance(&b, task)
+	}
+
 	b.WriteString("Design a workflow, not just a flat task list. Based on the goal and the roles available to you (your Squad Roster AND the Available workspace roles pool), decide the shape:\n")
 	b.WriteString("- Break the goal into the smallest set of nodes that fully covers it. Prefer 2–6 execute nodes.\n")
 	b.WriteString("- Assign each node to ONE role agent by its UUID — choose from your Squad Roster OR the Available workspace roles pool (pool agents do NOT need to be squad members; you can assign work to them directly). Each roster entry carries the role's description — READ IT and match the node to the role whose described specialty fits best (don't pick by name alone; e.g. send implementation to a coder, a verify node to a reviewer/evaluator). Prefer roles flagged as this project's own. Don't pile every node onto yourself when a better-suited role exists; use yourself only when no listed role fits.\n")
@@ -89,6 +93,22 @@ func buildGoalPlanningPrompt(task Task) string {
 	b.WriteString("  [{\"seq\":1,\"title\":\"Backend API\",\"spec\":\"Implement POST /auth/login and report the accepted request/response contract\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[]},{\"seq\":2,\"title\":\"Security review\",\"spec\":\"Adversarially review the provided login API work product for authentication flaws and report a pass/reject verdict with any constraints\",\"assignee_agent_id\":\"<reviewer-uuid>\",\"depends_on\":[1],\"kind\":\"verify\"},{\"seq\":3,\"title\":\"Frontend\",\"spec\":\"Wire the login form using the provided accepted API contract and review constraints\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[1,2]}]\n\n")
 	b.WriteString("Do not execute the nodes yourself — submitting the plan dispatches them automatically. Submit exactly one plan, then stop.\n")
 	return b.String()
+}
+
+// writeAutofixPlanningGuidance injects the issue auto-fix steering into the
+// planning prompt. The goal above is a bug/feature report bound to a project
+// repo; the PMO must plan a FIXED 4-node DAG that files a GitHub issue, fixes the
+// code, verifies the fix end to end, and opens a PR. The guidance states INTENT
+// ONLY and explicitly tells the agent to read the repo's existing conventions —
+// it never hardcodes `gh` command templates, because each repo's CLI/git/PR
+// dialect differs and the agent runs inside the repo with its own credentials.
+func writeAutofixPlanningGuidance(b *strings.Builder, task Task) {
+	b.WriteString("This is an issue AUTO-FIX run. The goal above is a report about a problem in a project repository. Plan EXACTLY these four execute nodes, chained with `depends_on` so each waits for the previous one (N1 → N2 → N3 → N4):\n")
+	b.WriteString("- N1 — File the issue upstream: open a GitHub issue in the project's repository describing the reported problem, and report back the created issue number and its URL. First read how this repository expects issues to be filed (its own GitHub CLI / tooling conventions); do NOT assume a fixed command — use whatever this repo's environment provides. The agent runs inside the repo with its own credentials.\n")
+	b.WriteString("- N2 — Fix the problem: reproduce and fix it in a fresh working tree/branch for this repo, following the repository's existing code conventions. Depends on N1.\n")
+	b.WriteString("- N3 — Verify end to end: validate the fix using THIS repository's existing end-to-end / test conventions (read them first — do not invent a test harness). If the problem cannot be reproduced or no real defect is found, do NOT fabricate a fix: report back clearly that more information is needed and why. Depends on N2.\n")
+	b.WriteString("- N4 — Open the pull request: push the fix branch and open a PR against the repository using whatever this repo's push/PR conventions are (read them first; do not assume a fixed command). The PR body must reference the GitHub issue number reported by N1. Report back the PR URL. Depends on N3.\n")
+	b.WriteString("Across all four nodes: state the INTENT in each `spec` and instruct the role to read and follow this repository's existing conventions first. Never hardcode literal shell command templates for filing the issue or opening the PR — the repo's own tooling is authoritative.\n\n")
 }
 
 // buildGoalSummaryPrompt constructs the PMO's 收口/汇总 prompt: all subtasks are
