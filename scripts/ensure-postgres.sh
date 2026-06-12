@@ -66,28 +66,57 @@ is_local() {
   [ -z "$DATABASE_URL" ] || [ "$db_host" = "localhost" ] || [ "$db_host" = "127.0.0.1" ] || [ "$db_host" = "::1" ]
 }
 
-if is_local; then
-  # ---------- Local: use Docker ----------
-  echo "==> Ensuring shared PostgreSQL container is running on localhost:5432..."
-  docker compose up -d postgres
+local_host="${db_host:-localhost}"
+local_port="${db_port:-5432}"
 
-  echo "==> Waiting for PostgreSQL to be ready..."
-  until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres > /dev/null 2>&1; do
-    sleep 1
-  done
+# A Postgres already listening on the target host:port — native install, an
+# already-running Docker container, or a shared instance — is reused as-is. We
+# only fall back to "docker compose up postgres" when nothing is listening AND
+# no native client exists to talk to it. This keeps "reuse what's already there"
+# the default path (the dogfood flow depends on it) instead of forcing Docker
+# for every localhost URL.
+native_pg_running() {
+  command -v pg_isready > /dev/null 2>&1 || return 1
+  pg_isready -h "$local_host" -p "$local_port" > /dev/null 2>&1
+}
 
-  echo "==> Ensuring database '$POSTGRES_DB' exists..."
-  db_exists="$(docker compose exec -T postgres \
-    psql -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
-
-  if [ "$db_exists" != "1" ]; then
-    docker compose exec -T postgres \
-      psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
-      -c "CREATE DATABASE \"$POSTGRES_DB\"" \
-      > /dev/null
+ensure_db_native() {
+  echo "==> Ensuring database '$POSTGRES_DB' exists (native client on $local_host:$local_port)..."
+  local exists
+  exists="$(psql -h "$local_host" -p "$local_port" -U "$POSTGRES_USER" -d postgres -Atqc \
+    "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" 2>/dev/null || true)"
+  if [ "$exists" != "1" ]; then
+    createdb -h "$local_host" -p "$local_port" -U "$POSTGRES_USER" "$POSTGRES_DB"
   fi
+  echo "✓ PostgreSQL ready (existing instance). Database: $POSTGRES_DB"
+}
 
-  echo "✓ PostgreSQL ready (local Docker). Database: $POSTGRES_DB"
+if is_local; then
+  # ---------- Local: reuse a running Postgres, else fall back to Docker ----------
+  if native_pg_running; then
+    ensure_db_native
+  else
+    echo "==> No Postgres on $local_host:$local_port; starting shared Docker container..."
+    docker compose up -d postgres
+
+    echo "==> Waiting for PostgreSQL to be ready..."
+    until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres > /dev/null 2>&1; do
+      sleep 1
+    done
+
+    echo "==> Ensuring database '$POSTGRES_DB' exists..."
+    db_exists="$(docker compose exec -T postgres \
+      psql -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
+
+    if [ "$db_exists" != "1" ]; then
+      docker compose exec -T postgres \
+        psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+        -c "CREATE DATABASE \"$POSTGRES_DB\"" \
+        > /dev/null
+    fi
+
+    echo "✓ PostgreSQL ready (local Docker). Database: $POSTGRES_DB"
+  fi
 else
   # ---------- Remote: skip Docker, verify connectivity ----------
   echo "==> Remote database detected (host: $db_host). Skipping Docker."

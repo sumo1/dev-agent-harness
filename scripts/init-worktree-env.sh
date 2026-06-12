@@ -17,8 +17,40 @@ fi
 hash_value="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 offset=$((hash_value % 1000))
 
-postgres_db="multica_${slug}_${offset}"
 postgres_port=5432
+
+# DB strategy:
+#   - Default: each worktree gets its own database (multica_<slug>_<offset>),
+#     matching the CLAUDE.md "database-level isolation" rule for normal worktrees.
+#   - REUSE_DATABASE_URL set: reuse an existing database verbatim (used by the
+#     dogfood flow, which isolates only the git worktree + ports and shares the
+#     control plane's live tables). We still parse out POSTGRES_* so tooling that
+#     reads those individual fields stays consistent with DATABASE_URL.
+if [ -n "${REUSE_DATABASE_URL:-}" ]; then
+  database_url="$REUSE_DATABASE_URL"
+  # postgres://user[:pass]@host[:port]/db[?params]
+  _rest="${database_url#*://}"
+  _creds="${_rest%%@*}"
+  _hostpart="${_rest#*@}"
+  _hostport="${_hostpart%%/*}"
+  _dbpart="${_hostpart#*/}"
+  postgres_user="${_creds%%:*}"
+  if [ "$_creds" = "$postgres_user" ]; then
+    postgres_password=""
+  else
+    postgres_password="${_creds#*:}"
+  fi
+  if [ "${_hostport#*:}" != "$_hostport" ]; then
+    postgres_port="${_hostport#*:}"
+  fi
+  postgres_db="${_dbpart%%\?*}"
+else
+  postgres_db="multica_${slug}_${offset}"
+  postgres_user="multica"
+  postgres_password="multica"
+  database_url="postgres://multica:multica@localhost:${postgres_port}/${postgres_db}?sslmode=disable"
+fi
+
 backend_port=$((18080 + offset))
 frontend_port=$((13000 + offset))
 desktop_renderer_port=$((14000 + offset))
@@ -27,10 +59,10 @@ desktop_daemon_profile="desktop-localhost-${backend_port}"
 
 cat > "$ENV_FILE" <<EOF
 POSTGRES_DB=${postgres_db}
-POSTGRES_USER=multica
-POSTGRES_PASSWORD=multica
+POSTGRES_USER=${postgres_user}
+POSTGRES_PASSWORD=${postgres_password}
 POSTGRES_PORT=${postgres_port}
-DATABASE_URL=postgres://multica:multica@localhost:${postgres_port}/${postgres_db}?sslmode=disable
+DATABASE_URL=${database_url}
 
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
