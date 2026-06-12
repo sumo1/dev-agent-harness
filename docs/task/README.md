@@ -63,4 +63,5 @@ docs/task/{task-id}/
 ## 当前任务索引
 
 <!-- 新任务在这里登记一行：- [{task-id}](./{task-id}/) — 一句话 -->
+- [260612-issue-github-autofix](./260612-issue-github-autofix/) — Issue 录入（粘贴图片+一段话）→ 推 GitHub Issue → 自动修复运行（worktree 改代码 + E2E 验证 + 出 PR）→ 三态可视 → 点 issue 跳助理会话。GitHub 写全走 agent 子任务（server 不碰 GitHub API）。**本轮只整理需求+拆解，未执行**。
 - [260608-assistant-enhancements](./260608-assistant-enhancements/) — 任务模式 / 多智能体动态 workflow / computer-use 桌面验证 / repo-SSOT。按动作查资料先从 [`../README.md`](../README.md) 进入；原始证据看 [`260608-assistant-enhancements/memory/README.md`](./260608-assistant-enhancements/memory/README.md)。
