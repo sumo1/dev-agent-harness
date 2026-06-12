@@ -6,6 +6,26 @@
     "empty_hint": "Create an issue to get started.",
     "move_failed": "Failed to move issue"
   },
+  "autofix_page": {
+    "new_issue": "New issue",
+    "loading": "Loading…",
+    "empty_detail": "Select an issue to see its details.",
+    "no_description": "No description.",
+    "jump_to_assistant": "Open assistant session",
+    "view_pr": "View pull request",
+    "create_placeholder": "Describe the issue, paste a screenshot…",
+    "create": "Create",
+    "creating": "Creating…",
+    "uploading": "Uploading…",
+    "cancel": "Cancel",
+    "create_failed": "Failed to create issue",
+    "state": {
+      "not_started": "Auto-fix not started",
+      "running": "Auto-fix in progress",
+      "completed": "Auto-fix completed",
+      "needs_info": "Needs more info"
+    }
+  },
   "status": {
     "backlog": "Backlog",
     "todo": "Todo",

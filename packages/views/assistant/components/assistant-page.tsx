@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useChatStore } from "@multica/core/chat";
 import { useAuthStore } from "@multica/core/auth";
 import { chatSessionsOptions, chatMessagesOptions, pendingChatTaskOptions, chatKeys } from "@multica/core/chat/queries";
+import { goalRunOptions } from "@multica/core/goals/queries";
+import { ASSISTANT_GOAL_RUN_PARAM, ASSISTANT_SESSION_PARAM } from "@multica/core/paths";
+import { useNavigation } from "../../navigation";
 import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import { useAgentPresenceDetail } from "@multica/core/agents";
@@ -28,8 +31,37 @@ export function AssistantPage() {
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const qc = useQueryClient();
+  const { searchParams } = useNavigation();
 
   const { t } = useT("chat");
+
+  // Session locator on entry (issue → "jump to assistant session"). Either a
+  // direct `session_id`, or a `goal_run_id` resolved to that goal_run's
+  // discussion `chat_session_id`. Both arrive as query params through the
+  // shared NavigationAdapter — no next/react-router import here.
+  const localeSessionParam = searchParams.get(ASSISTANT_SESSION_PARAM) ?? "";
+  const goalRunParam = searchParams.get(ASSISTANT_GOAL_RUN_PARAM) ?? "";
+
+  const { data: locatorGoalRun } = useQuery({
+    ...goalRunOptions(wsId, goalRunParam),
+    enabled: !!wsId && !!goalRunParam,
+  });
+
+  // Resolve the locator to a concrete session id: a direct session_id wins;
+  // otherwise the goal_run's discussion chat_session_id (once loaded).
+  const resolvedLocatorSessionId =
+    localeSessionParam || (locatorGoalRun?.chat_session_id ?? "");
+
+  // Select the located session once. We track the value we last applied so a
+  // user navigating away from it within the same mount isn't yanked back.
+  const [appliedLocatorSession, setAppliedLocatorSession] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!resolvedLocatorSessionId) return;
+    if (resolvedLocatorSessionId === appliedLocatorSession) return;
+    setActiveSession(resolvedLocatorSessionId);
+    setAppliedLocatorSession(resolvedLocatorSessionId);
+  }, [resolvedLocatorSessionId, appliedLocatorSession, setActiveSession]);
 
   // 新建会话对话框状态
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);

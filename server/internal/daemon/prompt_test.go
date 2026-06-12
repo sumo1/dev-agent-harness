@@ -601,6 +601,59 @@ func TestBuildGoalPlanningPromptDialectAlignment(t *testing.T) {
 	}
 }
 
+// TestBuildGoalPlanningPromptAutofix locks the issue auto-fix planning guidance:
+// when GoalPlanningAutofix is set, the prompt steers the PMO to plan the fixed
+// 4-node DAG (file GitHub issue → fix → verify → open PR) chained via depends_on,
+// conveys INTENT plus "read this repo's existing conventions first", and reports
+// needs-info when the problem is not reproducible. It must NEVER hardcode literal
+// `gh issue create` / `gh pr create` command templates.
+func TestBuildGoalPlanningPromptAutofix(t *testing.T) {
+	out := buildGoalPlanningPrompt(Task{
+		GoalPlanningRunID:   "gr-autofix",
+		GoalPlanningGoal:    "Login button does nothing on click",
+		ProjectID:           "proj-1",
+		GoalPlanningAutofix: true,
+	})
+
+	mustContain := []string{
+		"AUTO-FIX run",      // explicit autofix framing
+		"GitHub issue",      // N1 intent: file the issue upstream
+		"issue number",      // N1 reports back the number
+		"depends_on",        // chained DAG
+		"end to end",        // N3 verify intent
+		"more information is needed", // N3 needs-info report path
+		"pull request",      // N4 intent: open the PR
+		"reference the GitHub issue number", // PR body references N1's issue
+		"read",              // "read this repo's existing conventions first"
+		"conventions",       // convention-first steering
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(out, want) {
+			t.Errorf("autofix planning prompt missing %q\n---\n%s", want, out)
+		}
+	}
+
+	// Hard prohibition: no literal CLI command templates for the GitHub steps.
+	mustNotContain := []string{
+		"gh issue create",
+		"gh pr create",
+	}
+	for _, bad := range mustNotContain {
+		if strings.Contains(out, bad) {
+			t.Errorf("autofix planning prompt must NOT hardcode %q\n---\n%s", bad, out)
+		}
+	}
+
+	// Without the autofix flag, none of the autofix steering leaks in.
+	plain := buildGoalPlanningPrompt(Task{
+		GoalPlanningRunID: "gr-plain",
+		GoalPlanningGoal:  "ship it",
+	})
+	if strings.Contains(plain, "AUTO-FIX run") {
+		t.Error("non-autofix planning prompt must not contain autofix steering")
+	}
+}
+
 // TestBuildGoalPersistPrompt locks in the repo-persist (持久化到工程) prompt: it
 // routes via GoalPersistRunID, writes the snapshot under the slug dir, transcribes
 // the already-dual-contract specs (does not re-derive), and — crucially for a

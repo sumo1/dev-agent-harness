@@ -6,6 +6,26 @@
     "empty_hint": "イシューを作成して始めましょう。",
     "move_failed": "イシューを移動できませんでした"
   },
+  "autofix_page": {
+    "new_issue": "新規イシュー",
+    "loading": "読み込み中…",
+    "empty_detail": "イシューを選択すると詳細が表示されます。",
+    "no_description": "説明がありません。",
+    "jump_to_assistant": "アシスタントセッションを開く",
+    "view_pr": "プルリクエストを表示",
+    "create_placeholder": "イシューを説明し、スクリーンショットを貼り付けてください…",
+    "create": "作成",
+    "creating": "作成中…",
+    "uploading": "アップロード中…",
+    "cancel": "キャンセル",
+    "create_failed": "イシューの作成に失敗しました",
+    "state": {
+      "not_started": "自動修正は未開始",
+      "running": "自動修正を実行中",
+      "completed": "自動修正が完了",
+      "needs_info": "追加情報が必要"
+    }
+  },
   "status": {
     "backlog": "バックログ",
     "todo": "未着手",

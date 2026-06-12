@@ -6,6 +6,26 @@
     "empty_hint": "创建一个 issue 开始使用。",
     "move_failed": "移动 issue 失败"
   },
+  "autofix_page": {
+    "new_issue": "新建 issue",
+    "loading": "加载中…",
+    "empty_detail": "选择一个 issue 查看详情。",
+    "no_description": "暂无描述。",
+    "jump_to_assistant": "打开助理会话",
+    "view_pr": "查看 pull request",
+    "create_placeholder": "描述这个 issue，可粘贴截图…",
+    "create": "创建",
+    "creating": "创建中…",
+    "uploading": "上传中…",
+    "cancel": "取消",
+    "create_failed": "创建 issue 失败",
+    "state": {
+      "not_started": "自动修复未启动",
+      "running": "自动修复进行中",
+      "completed": "自动修复已完成",
+      "needs_info": "需要补充信息"
+    }
+  },
   "status": {
     "backlog": "待规划",
     "todo": "待办",

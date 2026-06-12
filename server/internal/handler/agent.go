@@ -225,6 +225,7 @@ type AgentTaskResponse struct {
 	GoalHandoffBrief          string               `json:"goal_handoff_brief,omitempty"`           // frames upstream output as direct runtime input, not a file handoff
 	GoalPlanningRunID         string               `json:"goal_planning_run_id,omitempty"`         // non-empty for goal-planning tasks (PMO decomposes)
 	GoalPlanningGoal          string               `json:"goal_planning_goal,omitempty"`           // the goal text the leader must decompose
+	GoalPlanningAutofix       bool                 `json:"goal_planning_autofix,omitempty"`        // true for issue auto-fix planning (fixed 4-node DAG)
 	GoalSummaryRunID          string               `json:"goal_summary_run_id,omitempty"`          // non-empty for goal-summary tasks (PMO writes the deliverable)
 	GoalSummaryGoal           string               `json:"goal_summary_goal,omitempty"`            // original goal text, for the summary prompt
 	GoalSummaryOutcome        string               `json:"goal_summary_outcome,omitempty"`         // completed / partial / failed

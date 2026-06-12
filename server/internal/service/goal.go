@@ -92,6 +92,11 @@ type GoalPlanningContext struct {
 	// existing docs/task/*/plan contracts and align to that project's dialect
 	// when writing each node's spec. Empty when the task is not bound.
 	ProjectID string `json:"project_id,omitempty"`
+	// Autofix marks this planning task as an issue auto-fix run. The daemon
+	// surfaces it to the planning prompt builder so the PMO is steered to plan
+	// the fixed 4-node DAG (file GitHub issue → fix → verify → open PR) instead
+	// of a free-form decomposition. Empty/false for ordinary task-mode goals.
+	Autofix bool `json:"autofix,omitempty"`
 }
 
 // GoalSummaryContextType marks a task as a goal-summary job: once every subtask
@@ -631,6 +636,14 @@ func (s *GoalService) StartPlanning(
 // free-prompt task path (no issue); the daemon's buildGoalPlanningPrompt + the
 // injected squad roster tell the leader how to decompose and submit.
 func (s *GoalService) dispatchPlanningTask(ctx context.Context, run db.GoalRun, squad db.Squad) error {
+	return s.dispatchPlanningTaskWithMode(ctx, run, squad, false)
+}
+
+// dispatchPlanningTaskWithMode is dispatchPlanningTask plus the autofix flag.
+// When autofix is true the planning context carries Autofix=true so the daemon
+// surfaces it to buildGoalPlanningPrompt, which then injects the fixed 4-node
+// auto-fix guidance instead of the free-form decomposition guidance.
+func (s *GoalService) dispatchPlanningTaskWithMode(ctx context.Context, run db.GoalRun, squad db.Squad, autofix bool) error {
 	leader, err := s.Queries.GetAgent(ctx, squad.LeaderID)
 	if err != nil {
 		return fmt.Errorf("load squad leader: %w", err)
@@ -653,6 +666,7 @@ func (s *GoalService) dispatchPlanningTask(ctx context.Context, run db.GoalRun, 
 	if run.ProjectID.Valid {
 		payload.ProjectID = util.UUIDToString(run.ProjectID)
 	}
+	payload.Autofix = autofix
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal goal planning context: %w", err)
@@ -1974,6 +1988,15 @@ func (s *GoalService) finalizeGoalRun(ctx context.Context, goalRunID pgtype.UUID
 		return
 	}
 	s.broadcastGoalRun(ctx, updated)
+
+	// Auto-fix report-back: a `partial` terminal status is the "needs more info"
+	// product state (design decision B) — the verify node could not reproduce or
+	// the fix is incomplete. Record the reason on the linked issue's metadata.
+	// resolveAutofixIssue is itself the autofix discriminator: a no-op when this
+	// run is an ordinary task-mode goal (no issue carries its latest_goal_run_id).
+	if status == "partial" {
+		s.ReportAutofixNeedsInfo(ctx, updated.WorkspaceID, goalRunID, failureReason)
+	}
 }
 
 // maybeDispatchSummary enqueues a single PMO summary task when all subtasks are
