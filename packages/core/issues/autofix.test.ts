@@ -84,20 +84,27 @@ describe("deriveAutofixStatus — four states + running", () => {
     });
   });
 
-  it("completed: goalRun completed, surfaces github issue_url", () => {
+  it("completed: goalRun completed, surfaces the PR url (not the github issue url)", () => {
     const issue = issueWith({
       goal_run_ids: ["run-1"],
       latest_goal_run_id: "run-1",
+      // Both present: the completed state must surface the PR url (N4's artifact),
+      // never the upstream github issue url (N1's artifact).
       github: { issue_number: 7, issue_url: "https://gh/o/r/issues/7" },
+      pr_url: "https://gh/o/r/pull/8",
     });
     expect(deriveAutofixStatus(issue, { status: "completed" })).toEqual({
       state: "completed",
-      prUrl: "https://gh/o/r/issues/7",
+      prUrl: "https://gh/o/r/pull/8",
     });
   });
 
-  it("completed: no github url still completes", () => {
-    const issue = issueWith({ goal_run_ids: ["run-1"] });
+  it("completed: no PR url still completes", () => {
+    const issue = issueWith({
+      goal_run_ids: ["run-1"],
+      // A github issue url alone must NOT be mistaken for a PR url.
+      github: { issue_number: 7, issue_url: "https://gh/o/r/issues/7" },
+    });
     expect(deriveAutofixStatus(issue, { status: "completed" })).toEqual({
       state: "completed",
       prUrl: undefined,
@@ -120,6 +127,34 @@ describe("deriveAutofixStatus — four states + running", () => {
     expect(deriveAutofixStatus(issue, { status: "partial" })).toEqual({
       state: "running",
     });
+  });
+
+  it("failed: goal_run failed → failed state with the first failed subtask's reason", () => {
+    const issue = issueWith({ goal_run_ids: ["run-1"] });
+    expect(
+      deriveAutofixStatus(issue, {
+        status: "failed",
+        subtasks: [
+          { status: "completed", failure_reason: "" },
+          { status: "failed", failure_reason: "compile error in handler" },
+        ] as GoalRun["subtasks"],
+      }),
+    ).toEqual({ state: "failed", reason: "compile error in handler" });
+  });
+
+  it("failed: cancelled also maps to failed (reason empty when no failed subtask)", () => {
+    const issue = issueWith({ goal_run_ids: ["run-1"] });
+    expect(deriveAutofixStatus(issue, { status: "cancelled" })).toEqual({
+      state: "failed",
+      reason: "",
+    });
+  });
+
+  it("failed: no longer mistaken for running (the gap this fixes)", () => {
+    const issue = issueWith({ goal_run_ids: ["run-1"] });
+    const got = deriveAutofixStatus(issue, { status: "failed" });
+    expect(got.state).toBe("failed");
+    expect(got.state).not.toBe("running");
   });
 
   it("running: planning / executing", () => {

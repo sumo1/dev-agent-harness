@@ -60,6 +60,15 @@ SET status = $2, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
+-- name: SetGoalRunProject :one
+-- Bind (or clear) the task's working directory = dependency project. The project
+-- is the role-sync source, the PMO's planning context, and what gates auto
+-- repo-persist. Pass NULL to unbind.
+UPDATE goal_run
+SET project_id = sqlc.narg('project_id'), updated_at = now()
+WHERE id = $1
+RETURNING *;
+
 -- name: ConfirmGoalRun :one
 -- Confirm gate: discussion -> confirmed. Stamps confirmed_at.
 UPDATE goal_run

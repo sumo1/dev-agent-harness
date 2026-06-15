@@ -71,6 +71,10 @@ type GoalSubtaskContext struct {
 	// its repo (claim surfaces ProjectResources) so it can read the project's
 	// existing contracts/conventions and align its output. Empty when unbound.
 	ProjectID string `json:"project_id,omitempty"`
+	// Autofix marks this subtask as part of an issue auto-fix run, so the daemon
+	// surfaces the `multica goal report` artifact channel (filed GitHub issue /
+	// opened PR) to the execute prompt. False for ordinary task-mode subtasks.
+	Autofix bool `json:"autofix,omitempty"`
 }
 
 // GoalPlanningContextType marks a task as a goal-planning job: the squad leader
@@ -332,6 +336,38 @@ func (s *GoalService) AddTaskMember(ctx context.Context, workspaceID, goalRunID,
 		Role:       "",
 	})
 	return err
+}
+
+// SetTaskProject binds (or clears) a task's working directory = dependency
+// project. projectID is the zero UUID to unbind. When set, it is validated to
+// belong to the workspace. Returns the updated goal so the UI reflects the new
+// binding (which drives role-sync, PMO planning context, and repo-persist).
+func (s *GoalService) SetTaskProject(ctx context.Context, workspaceID, goalRunID, projectID pgtype.UUID) (db.GoalRun, error) {
+	if _, err := s.Queries.GetGoalRunInWorkspace(ctx, db.GetGoalRunInWorkspaceParams{
+		ID:          goalRunID,
+		WorkspaceID: workspaceID,
+	}); err != nil {
+		return db.GoalRun{}, fmt.Errorf("load goal: %w", err)
+	}
+
+	if projectID.Valid {
+		project, err := s.Queries.GetProject(ctx, projectID)
+		if err != nil {
+			return db.GoalRun{}, fmt.Errorf("load project: %w", err)
+		}
+		if project.WorkspaceID != workspaceID {
+			return db.GoalRun{}, fmt.Errorf("project does not belong to workspace")
+		}
+	}
+
+	updated, err := s.Queries.SetGoalRunProject(ctx, db.SetGoalRunProjectParams{
+		ID:        goalRunID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return db.GoalRun{}, fmt.Errorf("set project: %w", err)
+	}
+	return updated, nil
 }
 
 // ConfirmTask passes the discussion → execution gate for a task-mode goal:
@@ -909,6 +945,12 @@ func (s *GoalService) dispatchSubtask(ctx context.Context, run db.GoalRun, st db
 	}
 	if run.ProjectID.Valid {
 		payload.ProjectID = util.UUIDToString(run.ProjectID)
+	}
+	// Mark autofix subtasks so the execute prompt surfaces the `multica goal
+	// report` artifact channel. The linked-issue lookup is the same discriminator
+	// the Report* helpers use — one source of truth for "is this an autofix run".
+	if _, ok := s.resolveAutofixIssue(ctx, run.WorkspaceID, run.ID); ok {
+		payload.Autofix = true
 	}
 	// A verify node reviews the output of the node(s) it depends on. Gather
 	// those nodes' titles + results so the verifier has the work product to

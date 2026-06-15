@@ -441,6 +441,40 @@ func (h *Handler) DecideSubtask(w http.ResponseWriter, r *http.Request) {
 	h.writeGoalForSubtask(w, r, subtaskID)
 }
 
+// ReportSubtaskArtifactRequest is reported by an auto-fix execute node's agent
+// via the CLI (`multica goal report <subtask-id> --github-issue-url ... --pr-url ...`).
+// The N1 node reports the GitHub issue it filed; the N4 node reports the PR it
+// opened. All fields are optional — the agent sends whichever artifact it produced.
+type ReportSubtaskArtifactRequest struct {
+	GithubIssueNumber int    `json:"github_issue_number"`
+	GithubIssueURL    string `json:"github_issue_url"`
+	PRURL             string `json:"pr_url"`
+}
+
+// ReportSubtaskArtifact records the GitHub issue / PR URL an auto-fix node
+// produced onto the linked issue's metadata. The subtask id scopes the report
+// to its goal_run; a report against a non-autofix run is a no-op (no linked
+// issue). Returns 200 with the supplied artifacts echoed back.
+func (h *Handler) ReportSubtaskArtifact(w http.ResponseWriter, r *http.Request) {
+	wsUUID, subtaskID, ok := h.parseSubtaskScope(w, r)
+	if !ok {
+		return
+	}
+	var req ReportSubtaskArtifactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.GoalService.ReportAutofixSubtaskArtifact(
+		r.Context(), wsUUID, subtaskID,
+		req.GithubIssueNumber, strings.TrimSpace(req.GithubIssueURL), strings.TrimSpace(req.PRURL),
+	); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // ---------------------------------------------------------------------------
 // Human intervention on a failed / blocked subtask (escalation buttons).
 // All return the full updated goal (run + subtasks) so the UI tree refreshes

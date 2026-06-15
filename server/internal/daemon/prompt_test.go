@@ -737,6 +737,49 @@ func TestBuildGoalSubtaskPromptUpstreamOutput(t *testing.T) {
 	}
 }
 
+// TestBuildGoalSubtaskPromptAutofixReportChannel locks the artifact report-back
+// channel for issue auto-fix nodes: an execute node flagged GoalAutofix must
+// surface `multica goal report <its-own-subtask-id>` with both the github-issue
+// and pr-url flag forms, so the N1/N4 agents have a concrete way to report the
+// GitHub issue they filed / PR they opened. It must NOT hardcode a `gh` template,
+// and a non-autofix node (or one missing the flag) must NOT carry the channel.
+func TestBuildGoalSubtaskPromptAutofixReportChannel(t *testing.T) {
+	out := buildGoalSubtaskPrompt(Task{
+		GoalSubtaskID:    "node-n1",
+		GoalSubtaskTitle: "File the GitHub issue",
+		GoalSubtaskSpec:  "Open a GitHub issue for the reported problem and report its number+url",
+		GoalSubtaskKind:  "execute",
+		GoalAutofix:      true,
+	})
+
+	for _, want := range []string{
+		"multica goal report node-n1 --github-issue-number", // N1 reports the filed issue
+		"--github-issue-url",
+		"multica goal report node-n1 --pr-url", // N4 reports the opened PR
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("autofix execute prompt missing report channel %q\n---\n%s", want, out)
+		}
+	}
+	// The report channel must not smuggle in a hardcoded GitHub CLI template.
+	for _, bad := range []string{"gh issue create", "gh pr create"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("autofix execute prompt must NOT hardcode %q\n---\n%s", bad, out)
+		}
+	}
+
+	// A non-autofix execute node must not carry the report channel.
+	plain := buildGoalSubtaskPrompt(Task{
+		GoalSubtaskID:    "node-x",
+		GoalSubtaskTitle: "Do a thing",
+		GoalSubtaskSpec:  "just do it",
+		GoalSubtaskKind:  "execute",
+	})
+	if strings.Contains(plain, "multica goal report") {
+		t.Errorf("non-autofix execute prompt must NOT carry the report channel:\n%s", plain)
+	}
+}
+
 // TestBuildGoalDecisionPrompt locks in the 下一步判断 prompt: it routes via
 // GoalDecisionSubtaskID, frames the coordinator as a judge (not a re-doer), and
 // ends in the proceed/reshape/abort CLI contract bound to the failed node's id.

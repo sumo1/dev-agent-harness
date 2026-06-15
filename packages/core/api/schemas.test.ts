@@ -71,12 +71,34 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     expect(parsed.issues[0]?.metadata).toEqual({});
   });
 
-  it("rejects metadata with non-primitive values (nested object)", () => {
+  it("accepts a nested object metadata value (server-written autofix blob)", () => {
+    // The auto-fix flow writes issue.metadata.autofix as a NESTED object via
+    // SetIssueMetadataKey. A primitive-only value union used to reject the whole
+    // issue here, silently wiping the autofix link → the jump-to-assistant button
+    // stayed disabled and the three-state pinned at not_started. The schema must
+    // carry the nested blob through so the Issue page can derive state + jump.
     const payload = {
-      issues: [{ ...baseIssue, metadata: { nested: { x: 1 } } }],
+      issues: [
+        {
+          ...baseIssue,
+          metadata: {
+            pipeline_status: "waiting", // primitive keys still pass through
+            autofix: {
+              goal_run_ids: ["run-1"],
+              latest_goal_run_id: "run-1",
+              github: { issue_number: 7, issue_url: "https://gh/o/r/issues/7" },
+              pr_url: "https://gh/o/r/pull/8",
+            },
+          },
+        },
+      ],
       total: 1,
     };
-    expect(ListIssuesResponseSchema.safeParse(payload).success).toBe(false);
+    const parsed = ListIssuesResponseSchema.parse(payload);
+    const meta = parsed.issues[0]?.metadata as Record<string, unknown>;
+    expect(meta.pipeline_status).toBe("waiting");
+    expect((meta.autofix as { latest_goal_run_id: string }).latest_goal_run_id).toBe("run-1");
+    expect((meta.autofix as { pr_url: string }).pr_url).toBe("https://gh/o/r/pull/8");
   });
 });
 

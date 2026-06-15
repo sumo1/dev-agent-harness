@@ -184,6 +184,55 @@ func runGoalDecide(cmd *cobra.Command, args []string) error {
 	return cli.PrintJSON(os.Stdout, result)
 }
 
+// ── Report (auto-fix artifact report-back) ───────────────────────────────────
+//
+// Used by an issue auto-fix execute node's agent to report the artifact it
+// produced: the N1 node reports the GitHub issue it filed, the N4 node reports
+// the PR it opened. The server records them on the linked issue's metadata so
+// the Issue page can show the GitHub issue / PR url and derive the fix state.
+
+var goalReportCmd = &cobra.Command{
+	Use:   "report <subtask-id>",
+	Short: "Report an auto-fix node's artifact (filed GitHub issue / opened PR)",
+	Long: "Report the artifact an auto-fix node produced. The 'file GitHub issue' " +
+		"node reports --github-issue-number and --github-issue-url; the 'open PR' " +
+		"node reports --pr-url. Fields are optional — send whichever you produced.",
+	Args: cobra.ExactArgs(1),
+	RunE: runGoalReport,
+}
+
+func runGoalReport(cmd *cobra.Command, args []string) error {
+	subtaskID := strings.TrimSpace(args[0])
+	if subtaskID == "" {
+		return fmt.Errorf("subtask id is required")
+	}
+	githubIssueNumber, _ := cmd.Flags().GetInt("github-issue-number")
+	githubIssueURL, _ := cmd.Flags().GetString("github-issue-url")
+	prURL, _ := cmd.Flags().GetString("pr-url")
+
+	if strings.TrimSpace(githubIssueURL) == "" && githubIssueNumber == 0 && strings.TrimSpace(prURL) == "" {
+		return fmt.Errorf("provide at least one of --github-issue-url / --github-issue-number / --pr-url")
+	}
+
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	body := map[string]any{
+		"github_issue_number": githubIssueNumber,
+		"github_issue_url":    githubIssueURL,
+		"pr_url":              prURL,
+	}
+	var result map[string]any
+	if err := client.PostJSON(ctx, "/api/goals/subtasks/"+subtaskID+"/report", body, &result); err != nil {
+		return fmt.Errorf("submit report: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
 func init() {
 	goalPlanCmd.Flags().String("subtasks", "", "JSON array of subtasks")
 	goalPlanCmd.Flags().Bool("subtasks-stdin", false, "read the subtasks JSON array from stdin")
@@ -194,4 +243,9 @@ func init() {
 
 	goalDecideCmd.Flags().String("spec", "", "replacement spec for the node (used with 'reshape')")
 	goalCmd.AddCommand(goalDecideCmd)
+
+	goalReportCmd.Flags().Int("github-issue-number", 0, "the filed GitHub issue number (N1 node)")
+	goalReportCmd.Flags().String("github-issue-url", "", "the filed GitHub issue URL (N1 node)")
+	goalReportCmd.Flags().String("pr-url", "", "the opened pull request URL (N4 node)")
+	goalCmd.AddCommand(goalReportCmd)
 }

@@ -45,6 +45,8 @@ export function SessionList({
           size="icon-sm"
           className="rounded-full"
           onClick={onNewSession}
+          aria-label={t(($) => $.session_list.new_session)}
+          title={t(($) => $.session_list.new_session)}
         >
           <Plus className="size-4" />
         </Button>

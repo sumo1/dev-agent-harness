@@ -1,0 +1,52 @@
+{
+  "page": {
+    "title": "作業ディレクトリ",
+    "description": "エージェントが実行されるローカルディレクトリ。daemon マシン上のフォルダをバインドし、任意で git リポジトリに関連付けます。イシュー作成時にここから作業ディレクトリを選びます。",
+    "new": "作業ディレクトリを追加",
+    "empty": "作業ディレクトリがまだありません",
+    "create_first": "最初の作業ディレクトリを追加"
+  },
+  "list": {
+    "git_bound": "git",
+    "no_git": "リポジトリなし",
+    "offline": "オフライン"
+  },
+  "form": {
+    "name": "名前",
+    "name_placeholder": "例: multica",
+    "local_path": "ローカルパス",
+    "local_path_placeholder": "/Users/you/work/repo",
+    "local_path_hint": "選択したマシン上の絶対パス。",
+    "daemon": "マシン",
+    "daemon_placeholder": "daemon マシンを選択",
+    "no_daemons": "オンラインの daemon マシンがありません。先に daemon を起動してください。",
+    "git_repo": "Git リポジトリ（任意）",
+    "git_repo_placeholder": "https://github.com/org/repo",
+    "git_repo_hint": "git リポジトリをバインドすると、エージェントがブランチ作成や PR を行えます。",
+    "create": "作成",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "edit_title": "作業ディレクトリを編集",
+    "create_title": "作業ディレクトリを追加",
+    "choose_folder": "フォルダを選択…",
+    "change_folder": "フォルダを変更",
+    "folder_label": "フォルダ",
+    "no_local_daemon": "このマシンのフォルダを選ぶには、まずローカル daemon を起動してください。",
+    "web_unsupported": "フォルダ選択はデスクトップアプリでのみ利用できます。",
+    "picked_hint": "名前はフォルダ名から取得され、このマシンで実行されます。",
+    "git_none": "git リポジトリなし（ローカルフォルダのみ）"
+  },
+  "delete": {
+    "title": "作業ディレクトリを削除しますか？",
+    "body": "ディレクトリのバインドを解除します。参照していたイシューは履歴を保持しますが、リンクは失われます。",
+    "confirm": "削除",
+    "cancel": "キャンセル"
+  },
+  "errors": {
+    "name_required": "名前は必須です",
+    "path_required": "ローカルパスは必須です",
+    "daemon_required": "マシンを選択してください",
+    "save_failed": "作業ディレクトリを保存できませんでした",
+    "delete_failed": "作業ディレクトリを削除できませんでした"
+  }
+}

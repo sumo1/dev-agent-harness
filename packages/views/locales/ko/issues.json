@@ -23,7 +23,33 @@
       "not_started": "자동 수정 시작 전",
       "running": "자동 수정 진행 중",
       "completed": "자동 수정 완료",
-      "needs_info": "추가 정보 필요"
+      "needs_info": "추가 정보 필요",
+      "failed": "자동 수정 실패"
+    },
+    "quick_actions": {
+      "title": "빠른 작업",
+      "disabled_hint": "먼저 에이전트를 지정하고 작업 디렉터리를 연결하여 수정을 시작하세요.",
+      "retry": "수정 재시도",
+      "needs_info": "정보 추가",
+      "new_worktree": "새 워크트리",
+      "complete": "이슈 완료",
+      "freeform": "후속 조치",
+      "send": "보내기",
+      "cancel": "취소",
+      "placeholder": "보내기 전에 메시지를 편집할 수 있습니다…",
+      "sent": "에이전트에게 전송했습니다",
+      "send_failed": "전송하지 못했습니다",
+      "preset": {
+        "retry": "이 문제의 수정을 다시 시도하세요.{reason} 그에 맞게 접근 방식을 조정한 뒤 한 번 더 실행하세요.",
+        "needs_info": "재현/수정에 도움이 되는 정보를 보충합니다:\n(재현 단계, 환경, 기대 동작 등을 작성…)",
+        "new_worktree": "이 저장소의 관례에 따라 이 이슈를 위한 독립된 워크트리/브랜치를 만들어 수정하세요.",
+        "complete": "이 이슈가 수정 완료되었음을 확인합니다. 이 저장소의 관례에 따라 마무리하세요 — PR을 열지(브랜치를 push하고 main에 병합하는 PR) 아니면 다른 적절한 방법일지는 당신이 판단하여 변경을 확정하세요.",
+        "freeform": ""
+      },
+      "reason_prefix": "지난 결과:",
+      "start": "수정 시작",
+      "start_sent": "자동 수정을 시작했습니다",
+      "start_failed": "수정을 시작하지 못했습니다"
     }
   },
   "status": {

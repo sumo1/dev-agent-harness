@@ -13,7 +13,8 @@
     "tasks": "Tasks",
     "runtimes": "Runtimes",
     "skills": "Skills",
-    "settings": "Settings"
+    "settings": "Settings",
+    "working_dirs": "Working Dirs"
   },
   "help": {
     "trigger": "Help",

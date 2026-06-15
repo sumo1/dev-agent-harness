@@ -193,10 +193,22 @@ export const CommentSchema = z.object({
 
 export const CommentsListSchema = z.array(CommentSchema);
 
-// Metadata is primitive-only by API/DB contract. Stay lenient on shape:
-// unknown keys land as `unknown` to a caller, but the field itself defaults
-// to {} so consumers never need to nil-guard `issue.metadata`.
-const IssueMetadataSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({});
+// Metadata is mostly primitive by API/DB contract, EXCEPT for a few
+// server-written structured blobs — notably `autofix`, the issue→goal_run link
+// the auto-fix flow writes as a nested object via SetIssueMetadataKey. A strict
+// primitive-only value union would reject the whole record the moment such an
+// object appears, making the issue fall back to its empty value and silently
+// wiping the autofix link (disabling the jump-to-assistant button and pinning
+// the three-state at not_started). So the value union also admits object values.
+// Stay lenient on shape: callers treat unknown keys as `unknown` and parse the
+// nested blob defensively (see parseAutofixMetadata); the field defaults to {}
+// so consumers never need to nil-guard `issue.metadata`.
+const IssueMetadataSchema = z
+  .record(
+    z.string(),
+    z.union([z.string(), z.number(), z.boolean(), z.record(z.string(), z.unknown())]),
+  )
+  .default({});
 
 export const IssueSchema = z.object({
   id: z.string(),

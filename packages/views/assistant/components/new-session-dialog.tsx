@@ -71,7 +71,10 @@ export function NewSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      {/* Cap the dialog height and make it a column so a long agent/runtime
+          list scrolls INSIDE instead of overflowing the viewport (which made
+          the centered box bleed off the top + bottom edges). */}
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{t(($) => $.new_dialog.title)}</DialogTitle>
           <DialogDescription>
@@ -79,7 +82,7 @@ export function NewSessionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="-mx-4 flex-1 space-y-6 overflow-y-auto px-4 py-4">
           {/* 智能体选择 */}
           <div className="space-y-2">
             <Label>{t(($) => $.new_dialog.agent_label)}</Label>

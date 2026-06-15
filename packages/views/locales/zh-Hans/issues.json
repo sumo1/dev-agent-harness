@@ -23,7 +23,33 @@
       "not_started": "自动修复未启动",
       "running": "自动修复进行中",
       "completed": "自动修复已完成",
-      "needs_info": "需要补充信息"
+      "needs_info": "需要补充信息",
+      "failed": "执行错误"
+    },
+    "quick_actions": {
+      "title": "快捷操作",
+      "disabled_hint": "先指派一个 agent 并绑定工作目录以启动修复。",
+      "retry": "重试修复",
+      "needs_info": "补充信息",
+      "new_worktree": "新建工作树",
+      "complete": "完成 issue",
+      "freeform": "跟进",
+      "send": "派发",
+      "cancel": "取消",
+      "placeholder": "派发前可以编辑这段消息…",
+      "sent": "已派发给 agent",
+      "send_failed": "派发失败",
+      "preset": {
+        "retry": "重新尝试修复这个问题。{reason}请据此调整后再跑一遍。",
+        "needs_info": "补充以下信息帮助你复现/修复：\n（在这里写复现步骤、环境、期望行为…）",
+        "new_worktree": "为这个问题在本仓库新建一个独立的工作树/分支来修复（按本仓库约定）。",
+        "complete": "我确认这个 issue 已经修复完成。请按本仓库约定收尾——你来判断走 PR（推分支 + 开 PR 合入主干）还是其它合适的方式，把改动落定。",
+        "freeform": ""
+      },
+      "reason_prefix": "上次结果：",
+      "start": "启动修复",
+      "start_sent": "已启动自动修复",
+      "start_failed": "启动修复失败"
     }
   },
   "status": {

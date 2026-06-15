@@ -110,9 +110,9 @@
     "cancel": "취소"
   },
   "picker": {
-    "no_project": "프로젝트 없음",
-    "remove": "프로젝트에서 제거",
-    "empty": "아직 프로젝트가 없습니다"
+    "no_project": "작업 디렉터리 없음",
+    "remove": "작업 디렉터리 해제",
+    "empty": "아직 작업 디렉터리가 없습니다"
   },
   "chip": {
     "fallback_label": "프로젝트"

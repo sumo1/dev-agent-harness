@@ -108,7 +108,8 @@ func writeAutofixPlanningGuidance(b *strings.Builder, task Task) {
 	b.WriteString("- N2 — Fix the problem: reproduce and fix it in a fresh working tree/branch for this repo, following the repository's existing code conventions. Depends on N1.\n")
 	b.WriteString("- N3 — Verify end to end: validate the fix using THIS repository's existing end-to-end / test conventions (read them first — do not invent a test harness). If the problem cannot be reproduced or no real defect is found, do NOT fabricate a fix: report back clearly that more information is needed and why. Depends on N2.\n")
 	b.WriteString("- N4 — Open the pull request: push the fix branch and open a PR against the repository using whatever this repo's push/PR conventions are (read them first; do not assume a fixed command). The PR body must reference the GitHub issue number reported by N1. Report back the PR URL. Depends on N3.\n")
-	b.WriteString("Across all four nodes: state the INTENT in each `spec` and instruct the role to read and follow this repository's existing conventions first. Never hardcode literal shell command templates for filing the issue or opening the PR — the repo's own tooling is authoritative.\n\n")
+	b.WriteString("Across all four nodes: state the INTENT in each `spec` and instruct the role to read and follow this repository's existing conventions first. Never hardcode literal shell command templates for filing the issue or opening the PR — the repo's own tooling is authoritative.\n")
+	b.WriteString("N1 and N4 report their artifacts back to Multica with `multica goal report <this-node's-subtask-id> ...` (the executing agent is given its own subtask id and the exact flags). Tell N1 to report the filed issue number+url and N4 to report the opened PR url, so the issue's fix state and links surface in the product.\n\n")
 }
 
 // buildGoalSummaryPrompt constructs the PMO's 收口/汇总 prompt: all subtasks are
@@ -243,6 +244,15 @@ func buildGoalSubtaskPrompt(task Task) string {
 		}
 	}
 	b.WriteString("Complete this task end to end. Stay within its scope — other assigned work is handled separately. When done, summarize what you produced.\n")
+	// Auto-fix artifact report-back channel. Harmless for ordinary nodes (the
+	// server no-ops a report from a non-autofix run); only the file-issue / open-PR
+	// nodes are asked by their spec to report an artifact. The agent has its own
+	// subtask id here, so it can run the command without guessing it.
+	if task.GoalAutofix && task.GoalSubtaskID != "" {
+		b.WriteString("\nIf your task asks you to report back a filed GitHub issue or an opened pull request, report it to Multica with:\n")
+		fmt.Fprintf(&b, "  multica goal report %s --github-issue-number <n> --github-issue-url <url>   # after filing the GitHub issue\n", task.GoalSubtaskID)
+		fmt.Fprintf(&b, "  multica goal report %s --pr-url <url>                                       # after opening the pull request\n", task.GoalSubtaskID)
+	}
 	return b.String()
 }
 

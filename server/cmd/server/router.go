@@ -464,6 +464,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/unsubscribe", h.UnsubscribeFromIssue)
 					r.Get("/active-task", h.GetActiveTaskForIssue)
 					r.Post("/tasks/{taskId}/cancel", h.CancelTask)
+					r.Post("/autofix", h.StartAutofix)
 					r.Post("/rerun", h.RerunIssue)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/usage", h.GetIssueUsage)
@@ -540,6 +541,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Put("/planner", h.SetWorkspacePlanner)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Post("/members", h.AddTaskMember)
+					r.Put("/project", h.SetTaskProject)
 					r.Post("/confirm", h.ConfirmTask)
 				})
 			})
@@ -557,6 +559,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/subtasks/{subtaskId}", func(r chi.Router) {
 					r.Post("/verdict", h.SubmitVerdict)
 					r.Post("/decide", h.DecideSubtask)
+					r.Post("/report", h.ReportSubtaskArtifact)
 					r.Post("/retry", h.RetrySubtask)
 					r.Post("/reassign", h.ReassignSubtask)
 					r.Post("/edit-spec", h.EditSubtaskSpec)

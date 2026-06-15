@@ -1588,6 +1588,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.GoalReviewTarget = gc.ReviewTarget
 			resp.GoalUpstreamOutput = gc.UpstreamOutput
 			resp.GoalHandoffBrief = gc.HandoffBrief
+			resp.GoalAutofix = gc.Autofix
 			if resp.WorkspaceID == "" {
 				resp.WorkspaceID = gc.WorkspaceID
 			}

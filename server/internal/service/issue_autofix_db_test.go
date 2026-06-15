@@ -363,6 +363,71 @@ func TestReportAutofix_RoundTrip(t *testing.T) {
 	f.svc.ReportAutofixNeedsInfo(ctx, f.workspaceID, mustUUID(t, "00000000-0000-0000-0000-000000000001"), "noop")
 }
 
+// TestReportAutofixSubtaskArtifact_RoundTrip exercises the subtask-scoped report
+// channel (`multica goal report <subtask-id>`): the N1/N4 nodes report against
+// their OWN subtask id, and the service resolves the goal_run from the subtask
+// before writing the github issue ref / PR url onto the linked issue.
+func TestReportAutofixSubtaskArtifact_RoundTrip(t *testing.T) {
+	f := newAutofixDBFixture(t, true)
+	ctx := context.Background()
+
+	issue := f.insertIssue(t, true, true)
+	run, err := f.svc.StartAutofixGoalRun(ctx, issue)
+	if err != nil {
+		t.Fatalf("StartAutofixGoalRun: %v", err)
+	}
+	if err := f.svc.LinkAutofixGoalRun(ctx, issue, run.ID); err != nil {
+		t.Fatalf("LinkAutofixGoalRun: %v", err)
+	}
+
+	// Seed a subtask under the run (the N1/N4 node the agent reports against).
+	st, err := f.queries.CreateGoalSubtask(ctx, db.CreateGoalSubtaskParams{
+		GoalRunID:       run.ID,
+		Seq:             1,
+		Title:           "File the GitHub issue",
+		Spec:            "Open a GitHub issue and report its number+url",
+		AssigneeAgentID: mustUUID(t, f.agentID),
+		DependsOn:       nil,
+		Status:          "running",
+		MaxAttempts:     3,
+		Kind:            "execute",
+	})
+	if err != nil {
+		t.Fatalf("create subtask: %v", err)
+	}
+
+	// N1 reports the filed issue, N4 reports the PR — both against the subtask id.
+	if err := f.svc.ReportAutofixSubtaskArtifact(ctx, f.workspaceID, st.ID, 77, "https://github.com/o/r/issues/77", ""); err != nil {
+		t.Fatalf("report github artifact: %v", err)
+	}
+	if err := f.svc.ReportAutofixSubtaskArtifact(ctx, f.workspaceID, st.ID, 0, "", "https://github.com/o/r/pull/78"); err != nil {
+		t.Fatalf("report pr artifact: %v", err)
+	}
+
+	reloaded, err := f.queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{
+		ID:          issue.ID,
+		WorkspaceID: f.workspaceID,
+	})
+	if err != nil {
+		t.Fatalf("reload issue: %v", err)
+	}
+	autofix := readAutofixMetadata(decodeIssueMetadata(reloaded.Metadata))
+
+	if autofix.Github == nil || autofix.Github.IssueNumber != 77 ||
+		autofix.Github.IssueURL != "https://github.com/o/r/issues/77" {
+		t.Fatalf("github not recorded via subtask report: %+v", autofix.Github)
+	}
+	if autofix.PRURL != "https://github.com/o/r/pull/78" {
+		t.Fatalf("pr_url not recorded via subtask report: %q", autofix.PRURL)
+	}
+
+	// A workspace mismatch must error (authorization gate), not silently write.
+	otherWS := mustUUID(t, "00000000-0000-0000-0000-0000000000ff")
+	if err := f.svc.ReportAutofixSubtaskArtifact(ctx, otherWS, st.ID, 0, "", "https://x/pull/9"); err == nil {
+		t.Fatal("expected workspace-mismatch report to error")
+	}
+}
+
 // Compile-time guard: the report-back JSON filter shape matches what the writers
 // persist (a regression here would silently break resolveAutofixIssue).
 func TestAutofixMetadataFilterShape(t *testing.T) {

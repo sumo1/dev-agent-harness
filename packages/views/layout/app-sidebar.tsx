@@ -32,6 +32,7 @@ import {
   MessageSquare,
   Target,
   ListTodo,
+  FolderGit,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
@@ -105,6 +106,7 @@ type NavKey =
   | "myIssues"
   | "issues"
   | "projects"
+  | "workingDirs"
   | "autopilots"
   | "agents"
   | "squads"
@@ -121,6 +123,7 @@ type NavLabelKey =
   | "my_issues"
   | "issues"
   | "projects"
+  | "working_dirs"
   | "autopilots"
   | "agents"
   | "roles"
@@ -136,11 +139,11 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
   { key: "inbox", labelKey: "inbox", icon: Inbox },
 ];
 
-// Task mode is the workspace's main line. The issue / project / squad concepts
-// are intentionally hidden from the sidebar to declutter around it (the routes,
-// data, and APIs still exist — project is selected from inside a task, squad is
-// the implicit "members of one task"). The agent entry is reframed as "角色 /
-// Roles": the member/role configuration center (Agent = L1 role).
+// Task mode is the workspace's main line. The squad + project concepts stay
+// hidden from the sidebar (squad = implicit "members of one task"; the heavy
+// Project board is superseded by the lightweight 「工作目录 / Working Dirs」
+// config — same backing entity, slimmer face). Issues stays surfaced. The agent
+// entry is reframed as "角色 / Roles": the member/role config center (Agent = L1).
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
   { key: "tasks", labelKey: "tasks", icon: Target },
   { key: "issues", labelKey: "issues", icon: ListTodo },
@@ -150,7 +153,10 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "usage", labelKey: "usage", icon: BarChart3 },
 ];
 
+// Configure = workspace plumbing. 「工作目录」lives here: a local directory on a
+// daemon machine, optionally git-bound — what an issue's agent runs in.
 const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
+  { key: "workingDirs", labelKey: "working_dirs", icon: FolderGit },
   { key: "runtimes", labelKey: "runtimes", icon: Monitor },
   { key: "skills", labelKey: "skills", icon: BookOpenText },
   { key: "settings", labelKey: "settings", icon: Settings },

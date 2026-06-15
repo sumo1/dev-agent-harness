@@ -186,12 +186,17 @@
       "partial": "部分完成",
       "failed": "失败",
       "cancelled": "已取消"
-    }
+    },
+    "working_dir": "工作目录",
+    "pick_working_dir": "选择工作目录",
+    "no_working_dir": "未选工作目录",
+    "working_dir_hint": "PMO 规划所依据、智能体运行所在的仓库。"
   },
   "session_list": {
     "title": "会话列表",
     "empty_title": "暂无会话",
-    "empty_hint": "点击右上角 + 创建新会话"
+    "empty_hint": "点击右上角 + 创建新会话",
+    "new_session": "新建会话"
   },
   "new_dialog": {
     "title": "新建对话",

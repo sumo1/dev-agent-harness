@@ -147,6 +147,48 @@ func (h *Handler) AddTaskMember(w http.ResponseWriter, r *http.Request) {
 	h.writeTaskGoal(w, r, goalID, workspaceUUID)
 }
 
+// SetTaskProjectRequest binds the task to a working directory (= dependency
+// project). An empty project_id clears the binding.
+type SetTaskProjectRequest struct {
+	ProjectID string `json:"project_id"`
+}
+
+// SetTaskProject binds (or clears) a task's working directory. This is the
+// first-class header control — moved out of the members popover, where picking
+// a project only drove role-sync and never actually bound it to the task.
+func (h *Handler) SetTaskProject(w http.ResponseWriter, r *http.Request) {
+	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	goalID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "task id")
+	if !ok {
+		return
+	}
+	var req SetTaskProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Empty = unbind (NULL project_id). A present value must be a valid UUID.
+	var projectUUID pgtype.UUID
+	if pid := strings.TrimSpace(req.ProjectID); pid != "" {
+		parsed, ok := parseUUIDOrBadRequest(w, pid, "project_id")
+		if !ok {
+			return
+		}
+		projectUUID = parsed
+	}
+
+	if _, err := h.GoalService.SetTaskProject(r.Context(), workspaceUUID, goalID, projectUUID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeTaskGoal(w, r, goalID, workspaceUUID)
+}
+
 // ConfirmTask passes the discussion → execution gate (PMO decomposes the goal).
 func (h *Handler) ConfirmTask(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())

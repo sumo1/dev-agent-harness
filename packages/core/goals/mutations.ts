@@ -93,7 +93,17 @@ export function useTaskActions() {
     onError: (err) => logger.error("confirmTask.error", err),
   });
 
-  return { create, addMember, confirm };
+  // Bind (or clear, with projectId="") the task's working directory.
+  const setProject = useMutation({
+    mutationFn: (vars: { taskId: string; projectId: string }) =>
+      api.setTaskProject(vars.taskId, vars.projectId),
+    onSuccess: (run) => {
+      if (run?.id) qc.setQueryData(goalKeys.run(wsId, run.id), run);
+    },
+    onError: (err) => logger.error("setTaskProject.error", err),
+  });
+
+  return { create, addMember, confirm, setProject };
 }
 
 /** Sync a project's repo role definitions into workspace Agents. On success,

@@ -26,6 +26,7 @@ export const autofixMetadataSchema = z.object({
   goal_run_ids: z.array(z.string()).default([]),
   latest_goal_run_id: z.string().optional(),
   github: autofixGithubSchema.optional(),
+  pr_url: z.string().optional(),
   needs_info_reason: z.string().optional(),
 }).loose();
 
@@ -38,6 +39,7 @@ export interface AutofixMetadata {
   goal_run_ids: string[];
   latest_goal_run_id?: string;
   github?: AutofixGithub;
+  pr_url?: string;
   needs_info_reason?: string;
 }
 
@@ -66,37 +68,50 @@ export function parseAutofixMetadata(issue: Pick<Issue, "metadata">): AutofixMet
 }
 
 // ---------------------------------------------------------------------------
-// Three-state derivation (design §1 decision B).
+// Five-state derivation (design §1 decision B + design-quick-actions §1).
 //
-// The product surfaces three states — not_started / completed / needs_info —
-// plus an interstitial running state. None of them is a new goal_run enum
-// value: we derive them from the existing goal_run.status string + the autofix
-// metadata blob.
+// The product surfaces five states, derived from goal_run.status + the autofix
+// metadata blob — no new goal_run enum value:
 //
 //   not_started : no autofix metadata, or no goal_run yet / goalRun missing
-//   completed   : goalRun.status === "completed" (PR url if recorded)
+//   running     : a live status (planning / executing / a future unknown)
+//   completed   : goalRun.status === "completed" (pr_url if the N4 node reported it)
 //   needs_info  : goalRun.status === "partial" + needs_info_reason set
-//   running     : any other live status (planning / executing / etc.)
+//   failed      : goalRun.status === "failed" / "cancelled" (执行错误)
+//
+// `failed` was the gap: a failed run used to fall through to `running`, so it
+// looked like it was still in flight. The reason is pulled from the first failed
+// subtask (run-level failure_reason isn't on the GoalRun response; subtasks are).
 // ---------------------------------------------------------------------------
 
 export type AutofixStatus =
   | { state: "not_started" }
   | { state: "running" }
   | { state: "completed"; prUrl?: string }
-  | { state: "needs_info"; reason: string };
+  | { state: "needs_info"; reason: string }
+  | { state: "failed"; reason: string };
+
+/** The reason a run failed = the first failed subtask's failure_reason (the
+ *  GoalRun response carries subtasks, not a run-level reason). Empty when none. */
+function firstFailedSubtaskReason(
+  goalRun: Partial<Pick<GoalRun, "subtasks">> | null | undefined,
+): string {
+  const failed = goalRun?.subtasks?.find((s) => s.status === "failed");
+  return failed?.failure_reason ?? "";
+}
 
 /**
  * Pure derivation of the product-facing autofix status from an issue and its
  * latest goal_run. `goalRun` is optional: when the metadata references a
  * goal_run that hasn't loaded (or doesn't exist), we treat it as not_started.
  *
- * `goalRun.status` is a server-driven string; the `switch`-equivalent here has
- * an explicit default branch (the trailing `running`) so an unknown future
- * status downgrades to "running" rather than crashing (enum-drift rule).
+ * `goalRun.status` is a server-driven string; the trailing `running` branch is
+ * the default, so an unknown future status downgrades to "running" rather than
+ * crashing (enum-drift rule).
  */
 export function deriveAutofixStatus(
   issue: Pick<Issue, "metadata">,
-  goalRun?: Pick<GoalRun, "status"> | null,
+  goalRun?: (Pick<GoalRun, "status"> & Partial<Pick<GoalRun, "subtasks">>) | null,
 ): AutofixStatus {
   const autofix = parseAutofixMetadata(issue);
 
@@ -114,11 +129,16 @@ export function deriveAutofixStatus(
   }
 
   if (goalRun.status === "completed") {
-    return { state: "completed", prUrl: autofix.github?.issue_url };
+    return { state: "completed", prUrl: autofix.pr_url };
   }
 
   if (goalRun.status === "partial" && (autofix.needs_info_reason ?? "") !== "") {
     return { state: "needs_info", reason: autofix.needs_info_reason as string };
+  }
+
+  // Hard failure / cancellation — the gap that used to read as "running".
+  if (goalRun.status === "failed" || goalRun.status === "cancelled") {
+    return { state: "failed", reason: firstFailedSubtaskReason(goalRun) };
   }
 
   // Everything else (planning / executing / confirmed / a future unknown

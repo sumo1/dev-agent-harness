@@ -46,6 +46,7 @@ type AutofixMetadata struct {
 	GoalRunIDs      []string       `json:"goal_run_ids"`
 	LatestGoalRunID string         `json:"latest_goal_run_id,omitempty"`
 	Github          *AutofixGithub `json:"github,omitempty"`
+	PRURL           string         `json:"pr_url,omitempty"`
 	NeedsInfoReason string         `json:"needs_info_reason,omitempty"`
 }
 
@@ -106,6 +107,14 @@ func appendAutofixGoalRun(metadata map[string]any, goalRunID string) AutofixMeta
 func setAutofixGithub(metadata map[string]any, number int, url string) AutofixMetadata {
 	autofix := readAutofixMetadata(metadata)
 	autofix.Github = &AutofixGithub{IssueNumber: number, IssueURL: url}
+	return autofix
+}
+
+// setAutofixPR records the pull request URL opened by the "open PR" subtask. This
+// is the artifact the frontend surfaces on the issue's "completed" state.
+func setAutofixPR(metadata map[string]any, url string) AutofixMetadata {
+	autofix := readAutofixMetadata(metadata)
+	autofix.PRURL = url
 	return autofix
 }
 
@@ -355,6 +364,63 @@ func (s *GoalService) ReportAutofixGithub(
 	if _, err := s.persistAutofixMetadata(ctx, issue.ID, issue.WorkspaceID, autofix); err != nil {
 		slog.Error("autofix: persist github ref", "error", err, "issue_id", util.UUIDToString(issue.ID))
 	}
+}
+
+// ReportAutofixPR records the pull request URL (opened by the N4 node) on the
+// linked issue's metadata. A no-op when the goal_run is not an autofix run (no
+// linked issue).
+func (s *GoalService) ReportAutofixPR(
+	ctx context.Context,
+	workspaceID, goalRunID pgtype.UUID,
+	url string,
+) {
+	issue, ok := s.resolveAutofixIssue(ctx, workspaceID, goalRunID)
+	if !ok {
+		return
+	}
+	metadata := decodeIssueMetadata(issue.Metadata)
+	autofix := setAutofixPR(metadata, strings.TrimSpace(url))
+	if _, err := s.persistAutofixMetadata(ctx, issue.ID, issue.WorkspaceID, autofix); err != nil {
+		slog.Error("autofix: persist pr url", "error", err, "issue_id", util.UUIDToString(issue.ID))
+	}
+}
+
+// ReportAutofixSubtaskArtifact is the subtask-scoped entry used by the
+// `multica goal report <subtask-id>` CLI: the N1 (file GitHub issue) and N4
+// (open PR) nodes report the artifacts they produced. It resolves the subtask's
+// goal_run (workspace-gated, like SubmitVerdict), then records whatever artifact
+// fields were supplied onto the linked issue's metadata.autofix.
+//
+// Both artifacts are optional: N1 reports the github issue number+url, N4 reports
+// the PR url. A report against a non-autofix run is silently a no-op (the
+// underlying Report* helpers find no linked issue). Returns an error only on a
+// bad subtask id / workspace mismatch so the agent gets a clear CLI failure.
+func (s *GoalService) ReportAutofixSubtaskArtifact(
+	ctx context.Context,
+	workspaceID, subtaskID pgtype.UUID,
+	githubIssueNumber int,
+	githubIssueURL string,
+	prURL string,
+) error {
+	st, err := s.Queries.GetGoalSubtask(ctx, subtaskID)
+	if err != nil {
+		return fmt.Errorf("load subtask: %w", err)
+	}
+	run, err := s.Queries.GetGoalRun(ctx, st.GoalRunID)
+	if err != nil {
+		return fmt.Errorf("load goal run: %w", err)
+	}
+	if run.WorkspaceID != workspaceID {
+		return fmt.Errorf("subtask does not belong to workspace")
+	}
+
+	if n := strings.TrimSpace(githubIssueURL); n != "" || githubIssueNumber > 0 {
+		s.ReportAutofixGithub(ctx, workspaceID, run.ID, githubIssueNumber, githubIssueURL)
+	}
+	if strings.TrimSpace(prURL) != "" {
+		s.ReportAutofixPR(ctx, workspaceID, run.ID, prURL)
+	}
+	return nil
 }
 
 // decodeIssueMetadata decodes the issue.metadata JSONB column into a map for the

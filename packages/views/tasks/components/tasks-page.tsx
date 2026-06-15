@@ -230,9 +230,15 @@ export function TasksPage() {
                 )}
               </div>
 
-              {/* Members / roles entry — manage the task's dynamic squad:
-                  sync roles from a dependency project, then add them as members
-                  (the squad roster is what the PMO plans against). */}
+              {/* Working directory — first-class task control (moved out of the
+                  members popover, where picking a project only synced roles and
+                  never actually bound it). Binding drives role-sync source, PMO
+                  planning context, and repo-persist. */}
+              <WorkingDirPicker goal={goal} t={t} />
+
+              {/* Members / roles entry — manage the task's dynamic squad: add
+                  agents (the squad roster is what the PMO plans against). Roles
+                  are synced from the task's bound working directory. */}
               <MembersPopover goal={goal} t={t} resolveAgentName={resolveAgentName} />
 
               {goal.status === "discussion" && (
@@ -395,12 +401,79 @@ export function TasksPage() {
   );
 }
 
+/** Working-directory picker: a first-class header control to bind the task to a
+ *  dependency project (its repo). Binding is what the PMO plans against, the
+ *  role-sync source, and what gates repo-persist. Empty value unbinds. */
+function WorkingDirPicker({
+  goal,
+  t,
+}: {
+  goal: GoalRun;
+  t: ReturnType<typeof useT<"chat">>["t"];
+}) {
+  const wsId = useWorkspaceId();
+  const { data: projects = [] } = useQuery(projectListOptions(wsId));
+  const { setProject } = useTaskActions();
+
+  const bound = projects.find((p) => p.id === goal.project_id);
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs" />}
+      >
+        <FolderGit2 className="h-3.5 w-3.5" />
+        <span className="max-w-[140px] truncate">
+          {bound ? bound.title : t(($) => $.task_page.working_dir)}
+        </span>
+        <ChevronDown className="h-3 w-3 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[300px] p-2">
+        <p className="mb-1.5 px-1 text-[11px] text-muted-foreground">
+          {t(($) => $.task_page.working_dir_hint)}
+        </p>
+        <div className="max-h-64 space-y-0.5 overflow-y-auto">
+          {projects.length === 0 ? (
+            <p className="py-3 text-center text-xs text-muted-foreground">
+              {t(($) => $.task_page.pick_working_dir)}
+            </p>
+          ) : (
+            projects.map((p) => {
+              const isBound = goal.project_id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={setProject.isPending}
+                  onClick={() =>
+                    setProject.mutate({
+                      taskId: goal.id,
+                      // Clicking the bound one again clears the binding.
+                      projectId: isBound ? "" : p.id,
+                    })
+                  }
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60 disabled:opacity-60",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                  {isBound && <Check className="h-3.5 w-3.5 shrink-0 text-success" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Members / roles popover: the task's member-configuration center.
- *  - Pick a dependency project and sync its repo roles into workspace Agents.
+ *  - Sync the bound working directory's repo roles into workspace Agents.
  *  - Add agents (incl. freshly synced ones) to the task's dynamic squad — the
  *    squad roster is exactly what the PMO plans against.
- *  This realizes "目标 → 工程 → 成员" without a separate menu: roles flow from
- *  the project into the task. */
+ *  The working directory is now bound via the header WorkingDirPicker; this
+ *  popover syncs roles from it (no separate project select). */
 function MembersPopover({
   goal,
   t,
@@ -411,15 +484,13 @@ function MembersPopover({
   resolveAgentName: (id: string) => string | undefined;
 }) {
   const wsId = useWorkspaceId();
-  const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { addMember } = useTaskActions();
   const syncRoles = useSyncProjectRoles();
 
-  // The project to sync roles from: the goal's bound project if any, else the
-  // user's pick. Drives the sync button.
-  const [pickedProjectId, setPickedProjectId] = useState<string>(goal.project_id || "");
-  const activeProjectId = goal.project_id || pickedProjectId;
+  // Roles are synced from the task's bound working directory (chosen via the
+  // header WorkingDirPicker). No project select here anymore.
+  const activeProjectId = goal.project_id || "";
   const activeAgents = useMemo(() => agents.filter((a) => !a.archived_at), [agents]);
   // Agents added to this task's squad in-session (optimistic check marks).
   const [added, setAdded] = useState<Set<string>>(new Set());
@@ -434,36 +505,28 @@ function MembersPopover({
         <ChevronDown className="h-3 w-3 opacity-60" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[340px] p-3">
-        {/* Sync roles from a dependency project */}
+        {/* Sync roles from the task's bound working directory */}
         <div className="mb-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <FolderGit2 className="h-3.5 w-3.5" />
             {t(($) => $.task_page.sync_from_project)}
           </div>
-          <div className="flex items-center gap-1.5">
-            <select
-              value={activeProjectId}
-              onChange={(e) => setPickedProjectId(e.target.value)}
-              className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"
-            >
-              <option value="">{t(($) => $.task_page.pick_project)}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
+          {activeProjectId ? (
             <Button
               size="sm"
               variant="outline"
-              className="h-7 shrink-0 gap-1 text-xs"
-              disabled={!activeProjectId || syncRoles.isPending}
-              onClick={() => activeProjectId && syncRoles.mutate(activeProjectId)}
+              className="h-7 w-full shrink-0 gap-1 text-xs"
+              disabled={syncRoles.isPending}
+              onClick={() => syncRoles.mutate(activeProjectId)}
             >
               <RefreshCw className={cn("h-3.5 w-3.5", syncRoles.isPending && "animate-spin")} />
               {t(($) => $.task_page.sync)}
             </Button>
-          </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              {t(($) => $.task_page.pick_working_dir)}
+            </p>
+          )}
           {syncRoles.data && (
             <p className="mt-1 text-[11px] text-muted-foreground">
               {t(($) => $.task_page.sync_result, {

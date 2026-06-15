@@ -2,6 +2,17 @@ import { ipcMain, dialog, BrowserWindow } from "electron";
 import { access, stat } from "fs/promises";
 import { constants as fsConstants } from "fs";
 import { basename, isAbsolute } from "path";
+import { execFile } from "child_process";
+
+export interface GitRemoteResult {
+  ok: boolean;
+  /** The folder's `origin` remote URL, when it is a git repo with one. */
+  url?: string;
+  /** Set when ok=false. "not_absolute"/"not_git"/"no_remote" are expected
+   *  (not errors) — the folder just isn't a git checkout with an origin. */
+  reason?: "not_absolute" | "not_git" | "no_remote" | "error";
+  error?: string;
+}
 
 export interface PickDirectoryResult {
   ok: boolean;
@@ -57,6 +68,48 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Read a local folder's `origin` git remote URL, if it is a git checkout that
+ * has one. Used to auto-fill the working-dir form's git binding after the user
+ * picks a folder — no typing. A non-git folder (or one without an origin) is an
+ * EXPECTED outcome, not an error: it returns ok=false with a benign reason and
+ * the caller just leaves the git field empty.
+ *
+ * Runs `git -C <path> config --get remote.origin.url` locally (desktop only).
+ * `-C` makes git operate in the folder without us changing cwd; `config --get`
+ * exits non-zero (code 1) when the key is absent, which we map to no_remote.
+ */
+async function detectGitRemote(path: string): Promise<GitRemoteResult> {
+  if (!path || !isAbsolute(path)) {
+    return { ok: false, reason: "not_absolute" };
+  }
+  return new Promise<GitRemoteResult>((resolve) => {
+    execFile(
+      "git",
+      ["-C", path, "config", "--get", "remote.origin.url"],
+      { timeout: 5000, windowsHide: true },
+      (err, stdout) => {
+        const url = (stdout ?? "").trim();
+        if (!err && url) {
+          resolve({ ok: true, url });
+          return;
+        }
+        // git exits 1 when the config key is missing (repo with no origin), and
+        // 128 when the path is not a git work tree. Both are expected — the
+        // folder simply has no remote to bind. Anything else is a real error.
+        const code = (err as NodeJS.ErrnoException & { code?: number })?.code;
+        if (code === 1) {
+          resolve({ ok: false, reason: "no_remote" });
+        } else if (code === 128) {
+          resolve({ ok: false, reason: "not_git" });
+        } else {
+          resolve({ ok: false, reason: "error", error: errorMessage(err) });
+        }
+      },
+    );
+  });
+}
+
 export function setupLocalDirectory(
   windowGetter: () => BrowserWindow | null,
 ): void {
@@ -89,5 +142,10 @@ export function setupLocalDirectory(
     "local-directory:validate",
     (_event, path: string): Promise<ValidateLocalDirectoryResult> =>
       validateLocalDirectory(path),
+  );
+
+  ipcMain.handle(
+    "local-directory:git-remote",
+    (_event, path: string): Promise<GitRemoteResult> => detectGitRemote(path),
   );
 }

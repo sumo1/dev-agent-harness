@@ -1330,6 +1330,12 @@ export class ApiClient {
     });
   }
 
+  /** Manually start the auto-fix flow for an existing issue (the "启动修复"
+   *  action). 400s when the issue isn't project-bound + agent-assigned. */
+  async startAutofix(issueId: string): Promise<{ goal_run_id: string }> {
+    return this.fetch(`/api/issues/${issueId}/autofix`, { method: "POST" });
+  }
+
   // Inbox
   async listInbox(): Promise<InboxItem[]> {
     return this.fetch("/api/inbox");
@@ -1727,6 +1733,18 @@ export class ApiClient {
     });
     return parseWithFallback(raw, GoalRunSchema, EMPTY_GOAL_RUN, {
       endpoint: "POST /api/tasks/{id}/confirm",
+    });
+  }
+
+  /** Bind (or clear, with empty projectId) a task's working directory = the
+   *  dependency project. Returns the updated goal. */
+  async setTaskProject(taskId: string, projectId: string): Promise<GoalRun> {
+    const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/project`, {
+      method: "PUT",
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    return parseWithFallback(raw, GoalRunSchema, EMPTY_GOAL_RUN, {
+      endpoint: "PUT /api/tasks/{id}/project",
     });
   }
 

@@ -25,11 +25,19 @@ export type ValidateLocalDirectoryResult = {
   error?: string;
 };
 
+export type GitRemoteResult = {
+  ok: boolean;
+  url?: string;
+  reason?: "not_absolute" | "not_git" | "no_remote" | "error" | "unsupported";
+  error?: string;
+};
+
 interface DesktopLocalDirectoryAPI {
   pickDirectory?: (defaultPath?: string) => Promise<PickDirectoryResult>;
   validateLocalDirectory?: (
     path: string,
   ) => Promise<ValidateLocalDirectoryResult>;
+  detectGitRemote?: (path: string) => Promise<GitRemoteResult>;
 }
 
 function readDesktopAPI(): DesktopLocalDirectoryAPI | undefined {
@@ -61,4 +69,12 @@ export async function validateLocalDirectory(
   const api = readDesktopAPI();
   if (!api?.validateLocalDirectory) return { ok: false, reason: "unsupported" };
   return api.validateLocalDirectory(path);
+}
+
+/** Read the picked folder's git origin URL so the working-dir form can auto-fill
+ *  the git binding. Non-git folders / web shell resolve to ok=false (no url). */
+export async function detectGitRemote(path: string): Promise<GitRemoteResult> {
+  const api = readDesktopAPI();
+  if (!api?.detectGitRemote) return { ok: false, reason: "unsupported" };
+  return api.detectGitRemote(path);
 }

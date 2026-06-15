@@ -189,12 +189,17 @@
       "partial": "부분 완료",
       "failed": "실패",
       "cancelled": "취소됨"
-    }
+    },
+    "working_dir": "작업 디렉터리",
+    "pick_working_dir": "작업 디렉터리 선택",
+    "no_working_dir": "작업 디렉터리 없음",
+    "working_dir_hint": "PMO가 계획의 근거로 삼고 에이전트가 실행되는 저장소."
   },
   "session_list": {
     "title": "세션",
     "empty_title": "세션이 없습니다",
-    "empty_hint": "오른쪽 상단의 +를 클릭하여 만드세요"
+    "empty_hint": "오른쪽 상단의 +를 클릭하여 만드세요",
+    "new_session": "새 세션"
   },
   "new_dialog": {
     "title": "새 채팅",

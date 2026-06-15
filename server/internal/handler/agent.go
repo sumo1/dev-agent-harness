@@ -223,6 +223,7 @@ type AgentTaskResponse struct {
 	GoalReviewTarget          string               `json:"goal_review_target,omitempty"`           // for verify nodes: the upstream output to review
 	GoalUpstreamOutput        string               `json:"goal_upstream_output,omitempty"`         // for execute nodes with deps: the OUTPUT of upstream node(s)
 	GoalHandoffBrief          string               `json:"goal_handoff_brief,omitempty"`           // frames upstream output as direct runtime input, not a file handoff
+	GoalAutofix               bool                 `json:"goal_autofix,omitempty"`                 // true for issue auto-fix subtasks: surface the `multica goal report` artifact channel
 	GoalPlanningRunID         string               `json:"goal_planning_run_id,omitempty"`         // non-empty for goal-planning tasks (PMO decomposes)
 	GoalPlanningGoal          string               `json:"goal_planning_goal,omitempty"`           // the goal text the leader must decompose
 	GoalPlanningAutofix       bool                 `json:"goal_planning_autofix,omitempty"`        // true for issue auto-fix planning (fixed 4-node DAG)

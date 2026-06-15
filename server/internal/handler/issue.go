@@ -2308,6 +2308,45 @@ func (h *Handler) maybeStartAutofix(ctx context.Context, issue db.Issue) {
 	}
 }
 
+// StartAutofix is the MANUAL trigger for an existing issue's auto-fix flow
+// (POST /api/issues/{id}/autofix), the counterpart to the create-time
+// maybeStartAutofix. Unlike that fail-soft path, this one is user-initiated, so
+// failures are returned (not swallowed): the user clicked "启动修复" and deserves
+// to know why nothing happened. Reuses the same gate + start + link primitives.
+func (h *Handler) StartAutofix(w http.ResponseWriter, r *http.Request) {
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+
+	// The gate is a structural check (project-bound + agent/squad assignee). When
+	// it fails, tell the user what's missing instead of silently doing nothing.
+	if !h.GoalService.ShouldAutofixIssue(issue) {
+		writeError(w, http.StatusBadRequest,
+			"autofix requires the issue to be bound to a project and assigned to an agent or squad")
+		return
+	}
+
+	run, err := h.GoalService.StartAutofixGoalRun(r.Context(), issue)
+	if err != nil {
+		// Planner unavailable / dispatch failed — surface it (the run did not start).
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.GoalService.LinkAutofixGoalRun(r.Context(), issue, run.ID); err != nil {
+		slog.Error("autofix: link goal run to issue metadata",
+			"issue_id", uuidToString(issue.ID),
+			"goal_run_id", uuidToString(run.ID),
+			"error", err,
+		)
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"goal_run_id": uuidToString(run.ID),
+	})
+}
+
 type UpdateIssueRequest struct {
 	Title         *string  `json:"title"`
 	Description   *string  `json:"description"`

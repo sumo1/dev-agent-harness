@@ -1,12 +1,27 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, X as XIcon, ExternalLink, ImageOff } from "lucide-react";
+import {
+  Plus,
+  X as XIcon,
+  ExternalLink,
+  ImageOff,
+  RotateCcw,
+  MessageSquarePlus,
+  GitBranchPlus,
+  CheckCircle2,
+  Send,
+  Play,
+} from "lucide-react";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { issueListOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
+import {
+  issueListOptions,
+  issueAttachmentsOptions,
+  issueKeys,
+} from "@multica/core/issues/queries";
 import { useCreateIssue, useUpdateIssue } from "@multica/core/issues/mutations";
 import { goalRunOptions } from "@multica/core/goals/queries";
 import { deriveAutofixStatus, parseAutofixMetadata } from "@multica/core/issues";
@@ -20,6 +35,7 @@ import type {
 } from "@multica/core/types";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import { useNavigation } from "../../navigation";
 import {
   ContentEditor,
@@ -147,36 +163,65 @@ export function AutofixIssuesPage() {
   );
 }
 
-/** A status dot mapping the autofix three-state (plus the running interstitial)
- *  to a color. Unknown future states fall through `deriveAutofixStatus` to
- *  "running", so this switch never crashes (enum-drift rule). */
-function AutofixDot({ issue }: { issue: Pick<Issue, "metadata"> }) {
+/** Per-state color + short label for the autofix status, shared by the list
+ *  badge and (potentially) other surfaces. */
+const AUTOFIX_STATE_STYLE: Record<
+  ReturnType<typeof deriveAutofixStatus>["state"],
+  { dot: string; text: string }
+> = {
+  completed: { dot: "bg-success", text: "text-success" },
+  failed: { dot: "bg-destructive", text: "text-destructive" },
+  needs_info: { dot: "bg-warning", text: "text-warning" },
+  running: { dot: "bg-primary", text: "text-primary" },
+  not_started: { dot: "bg-muted-foreground/40", text: "text-muted-foreground" },
+};
+
+/**
+ * List-row autofix status badge. Unlike the old dot-only version, this fetches
+ * the issue's latest goal_run (when it has one) so the state is REAL, not always
+ * "not_started" — that was the bug that made every fixing issue look unstarted.
+ * The query shares `goalRunOptions`' cache key with the detail column, so
+ * selecting the issue doesn't refetch. A short text label rides next to the dot
+ * so states are distinguishable without hovering. Issues that never started a
+ * fix show just a faint dot (no label noise).
+ */
+function AutofixBadge({ issue }: { issue: Issue }) {
   const { t } = useT("issues");
-  // The list query doesn't carry the goal_run object; the dot is derived from
-  // metadata alone. `deriveAutofixStatus` treats "metadata references a run but
-  // the run isn't loaded" as not_started, which is the correct list-level
-  // display (a colored "in flight" dot needs the run's live status, fetched
-  // only in the detail column).
-  const status = deriveAutofixStatus(issue);
+  const wsId = useWorkspaceId();
+  const autofix = useMemo(() => parseAutofixMetadata(issue), [issue]);
+  const latestRunId = autofix.latest_goal_run_id ?? "";
+  const { data: goalRun } = useQuery({
+    ...goalRunOptions(wsId, latestRunId),
+    enabled: !!wsId && !!latestRunId,
+  });
 
-  const color =
-    status.state === "completed"
-      ? "bg-success"
-      : status.state === "needs_info"
-        ? "bg-destructive"
-        : status.state === "running"
-          ? "bg-primary"
-          : "bg-muted-foreground/40";
-
+  const status = deriveAutofixStatus(issue, goalRun);
+  const style = AUTOFIX_STATE_STYLE[status.state];
   const label = t(($) => $.autofix_page.state[status.state]);
+
+  // No fix ever started → just a faint dot, no label (keeps the list quiet).
+  if (status.state === "not_started") {
+    return (
+      <span
+        className={cn("size-1.5 shrink-0 rounded-full", style.dot)}
+        title={label}
+        aria-label={label}
+        data-autofix-state={status.state}
+      />
+    );
+  }
 
   return (
     <span
-      className={cn("size-1.5 shrink-0 rounded-full", color)}
-      title={label}
-      aria-label={label}
+      className="flex shrink-0 items-center gap-1"
       data-autofix-state={status.state}
-    />
+      title={label}
+    >
+      <span className={cn("size-1.5 rounded-full", style.dot)} aria-hidden />
+      <span className={cn("text-[10px] font-medium whitespace-nowrap", style.text)}>
+        {label}
+      </span>
+    </span>
   );
 }
 
@@ -204,7 +249,7 @@ function IssueListRow({
         {issue.identifier ? `${issue.identifier} ` : ""}
         {issue.title}
       </span>
-      <AutofixDot issue={issue} />
+      <AutofixBadge issue={issue} />
     </button>
   );
 }
@@ -306,6 +351,12 @@ function IssueDetailColumn({ issue }: { issue: Issue }) {
         </div>
 
         <AutofixStateBanner status={status} />
+
+        <QuickActions
+          issue={issue}
+          status={status}
+          chatSessionId={goalRun?.chat_session_id ?? ""}
+        />
       </div>
 
       <div className="flex flex-col gap-4 px-5 py-4">
@@ -366,9 +417,20 @@ function AutofixStateBanner({
 
   if (status.state === "needs_info") {
     return (
-      <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+      <div className="mt-3 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
         <p className="font-medium">{t(($) => $.autofix_page.state.needs_info)}</p>
-        <p className="mt-1 whitespace-pre-wrap text-destructive/80">{status.reason}</p>
+        <p className="mt-1 whitespace-pre-wrap text-warning/80">{status.reason}</p>
+      </div>
+    );
+  }
+
+  if (status.state === "failed") {
+    return (
+      <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="font-medium">{t(($) => $.autofix_page.state.failed)}</p>
+        {status.reason && (
+          <p className="mt-1 whitespace-pre-wrap text-destructive/80">{status.reason}</p>
+        )}
       </div>
     );
   }
@@ -380,6 +442,205 @@ function AutofixStateBanner({
   return (
     <div className={cn("mt-3 rounded-md border px-3 py-2 text-xs", color)}>
       {t(($) => $.autofix_page.state[status.state])}
+    </div>
+  );
+}
+
+/**
+ * Quick actions — preset, editable conversations dispatched to the issue's
+ * auto-fix agent. Each button opens an inline editable textarea pre-filled with
+ * an intent; the user tweaks it and dispatches. We send to the goal_run's
+ * discussion chat_session (the coordinator/PMO), reusing the existing
+ * `api.sendChatMessage` — no new backend endpoint. The agent decides HOW to act
+ * (open a PR, ask for info, retry, merge…); multica only carries the intent.
+ *
+ * Disabled when there's no chat_session yet (no run to talk to). The action set
+ * is status-aware but every action stays available — the user may follow up at
+ * any point. Presets carry the failure / needs-info reason as context so the
+ * editable text starts useful.
+ */
+type QuickActionKey = "retry" | "needs_info" | "new_worktree" | "complete" | "freeform";
+
+const QUICK_ACTION_ICON: Record<QuickActionKey, typeof RotateCcw> = {
+  retry: RotateCcw,
+  needs_info: MessageSquarePlus,
+  new_worktree: GitBranchPlus,
+  complete: CheckCircle2,
+  freeform: MessageSquarePlus,
+};
+
+function QuickActions({
+  issue,
+  status,
+  chatSessionId,
+}: {
+  issue: Issue;
+  status: ReturnType<typeof deriveAutofixStatus>;
+  chatSessionId: string;
+}) {
+  const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  const [openKey, setOpenKey] = useState<QuickActionKey | null>(null);
+  const [draft, setDraft] = useState("");
+
+  const sendMessage = useMutation({
+    mutationFn: (content: string) => api.sendChatMessage(chatSessionId, content),
+  });
+
+  // Manual "start fix" for a not_started issue. Unlike the other actions this
+  // CREATES the goal_run (there's no session yet), so it hits the dedicated
+  // endpoint rather than sendChatMessage. On success the issue list/detail
+  // refetch picks up the new run → the state flips to running.
+  const startAutofix = useMutation({
+    mutationFn: () => api.startAutofix(issue.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+      toast.success(t(($) => $.autofix_page.quick_actions.start_sent));
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : t(($) => $.autofix_page.quick_actions.start_failed),
+      ),
+  });
+
+  // Eligible to start a fix = project-bound + assigned to an agent/squad (mirror
+  // of the server gate ShouldAutofixIssue). When eligible but no run yet, we show
+  // a one-click "start fix" instead of the inert hint.
+  const canStartAutofix =
+    !!issue.project_id &&
+    (issue.assignee_type === "agent" || issue.assignee_type === "squad") &&
+    !!issue.assignee_id;
+
+  // The reason snippet woven into a preset, sourced from the live status.
+  const reason =
+    status.state === "failed" || status.state === "needs_info" ? status.reason : "";
+
+  const presetFor = useCallback(
+    (key: QuickActionKey): string => {
+      const base = t(($) => $.autofix_page.quick_actions.preset[key]);
+      if (key === "retry" && reason) {
+        // "{reason}" placeholder → " <prefix> <reason>". Keep it one editable blob.
+        const prefix = t(($) => $.autofix_page.quick_actions.reason_prefix);
+        return base.replace("{reason}", ` ${prefix} ${reason}`);
+      }
+      return base.replace("{reason}", "");
+    },
+    [t, reason],
+  );
+
+  const openAction = useCallback(
+    (key: QuickActionKey) => {
+      setOpenKey(key);
+      setDraft(presetFor(key));
+    },
+    [presetFor],
+  );
+
+  const dispatch = useCallback(async () => {
+    const content = draft.trim();
+    if (!content || !chatSessionId) return;
+    try {
+      await sendMessage.mutateAsync(content);
+      toast.success(t(($) => $.autofix_page.quick_actions.sent));
+      setOpenKey(null);
+      setDraft("");
+    } catch {
+      toast.error(t(($) => $.autofix_page.quick_actions.send_failed));
+    }
+  }, [draft, chatSessionId, sendMessage, t]);
+
+  // No run / no discussion session yet. If the issue is eligible, offer a
+  // one-click "start fix" (creates the run); otherwise explain what's missing.
+  if (!chatSessionId) {
+    if (canStartAutofix) {
+      return (
+        <div className="mt-3">
+          <Button
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => startAutofix.mutate()}
+            disabled={startAutofix.isPending}
+          >
+            <Play className="size-3.5" />
+            {t(($) => $.autofix_page.quick_actions.start)}
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <p className="mt-3 text-xs text-muted-foreground/70">
+        {t(($) => $.autofix_page.quick_actions.disabled_hint)}
+      </p>
+    );
+  }
+
+  const actions: QuickActionKey[] = [
+    "retry",
+    "needs_info",
+    "new_worktree",
+    "complete",
+    "freeform",
+  ];
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {t(($) => $.autofix_page.quick_actions.title)}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {actions.map((key) => {
+          const Icon = QUICK_ACTION_ICON[key];
+          return (
+            <Button
+              key={key}
+              variant={openKey === key ? "default" : "outline"}
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => (openKey === key ? setOpenKey(null) : openAction(key))}
+            >
+              <Icon className="size-3.5" />
+              {t(($) => $.autofix_page.quick_actions[key])}
+            </Button>
+          );
+        })}
+      </div>
+
+      {openKey && (
+        <div className="mt-2 rounded-md border bg-background p-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={t(($) => $.autofix_page.quick_actions.placeholder)}
+            className="min-h-[80px] resize-y text-sm"
+            autoFocus
+          />
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setOpenKey(null);
+                setDraft("");
+              }}
+            >
+              {t(($) => $.autofix_page.quick_actions.cancel)}
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={dispatch}
+              disabled={!draft.trim() || sendMessage.isPending}
+            >
+              <Send className="size-3.5" />
+              {t(($) => $.autofix_page.quick_actions.send)}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

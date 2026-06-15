@@ -43,6 +43,9 @@ vi.mock("@multica/core/issues/queries", () => ({
     queryKey: ["issues", "attachments", issueId],
     queryFn: () => Promise.resolve(fixtures.attachments),
   }),
+  issueKeys: {
+    list: (wsId: string) => ["issues", wsId, "list"],
+  },
 }));
 
 vi.mock("@multica/core/goals/queries", () => ({
@@ -99,7 +102,13 @@ vi.mock("@multica/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: mockUploadWithToast, upload: vi.fn(), uploading: false }),
 }));
 
-vi.mock("@multica/core/api", () => ({ api: {} }));
+const sendChatMessageMock = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
+const startAutofixMock = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ goal_run_id: "g-new" })),
+);
+vi.mock("@multica/core/api", () => ({
+  api: { sendChatMessage: sendChatMessageMock, startAutofix: startAutofixMock },
+}));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -279,7 +288,10 @@ describe("AutofixIssuesPage", () => {
           autofix: {
             goal_run_ids: ["g1"],
             latest_goal_run_id: "g1",
-            github: { issue_url: "https://github.com/o/r/pull/9" },
+            // N1 filed the upstream GitHub issue; N4 opened the PR. The completed
+            // banner must link the PR (pr_url), not the upstream issue url.
+            github: { issue_url: "https://github.com/o/r/issues/4" },
+            pr_url: "https://github.com/o/r/pull/9",
           },
         } as never,
       }),
@@ -288,8 +300,9 @@ describe("AutofixIssuesPage", () => {
     renderPage();
 
     fireEvent.click(await screen.findByText(/Has PR/));
-    // The completed banner + PR link render once the run resolves.
-    expect(await screen.findByText("Auto-fix completed")).toBeInTheDocument();
+    // "Auto-fix completed" now appears in BOTH the list badge and the detail
+    // banner — at least one, and the PR link is the banner-specific proof.
+    expect((await screen.findAllByText("Auto-fix completed")).length).toBeGreaterThan(0);
     expect(screen.getByText("View pull request")).toBeInTheDocument();
   });
 
@@ -322,6 +335,154 @@ describe("AutofixIssuesPage", () => {
     fireEvent.click(await screen.findByText(/No run/));
     const btn = await screen.findByText("Open assistant session");
     expect(btn.closest("button")).toBeDisabled();
+  });
+
+  it("failed goal_run renders the 执行错误/failed banner (not 'in progress')", async () => {
+    fixtures.issues = [
+      issue({
+        id: "i1",
+        number: 1,
+        identifier: "TES-1",
+        title: "Broke",
+        metadata: {
+          autofix: { goal_run_ids: ["g1"], latest_goal_run_id: "g1" },
+        } as never,
+      }),
+    ];
+    // failed run with a failed subtask carrying the reason.
+    fixtures.goalRun = {
+      status: "failed",
+      chat_session_id: "cs-1",
+      subtasks: [{ status: "failed", failure_reason: "compile error in handler" }],
+    };
+    renderPage();
+
+    fireEvent.click(await screen.findByText(/Broke/));
+    // "Auto-fix failed" now shows in both the list badge and the banner; the
+    // failure reason is the banner-specific proof.
+    expect((await screen.findAllByText("Auto-fix failed")).length).toBeGreaterThan(0);
+    expect(screen.getByText("compile error in handler")).toBeInTheDocument();
+    // It must NOT show the in-progress banner.
+    expect(screen.queryByText("Auto-fix in progress")).not.toBeInTheDocument();
+  });
+
+  it("list badge shows the REAL state of an issue with a goal_run (not always not_started)", async () => {
+    // The bug: the list dot was derived without the goal_run object, so every
+    // issue with a fix showed "not_started". The badge now fetches the run.
+    fixtures.issues = [
+      issue({
+        id: "i1",
+        number: 1,
+        identifier: "TES-1",
+        title: "Fixing",
+        metadata: {
+          autofix: { goal_run_ids: ["g1"], latest_goal_run_id: "g1" },
+        } as never,
+      }),
+    ];
+    fixtures.goalRun = { status: "failed", chat_session_id: "cs-1", subtasks: [] };
+    renderPage();
+
+    // The list row's badge resolves to the failed state (data attr on the badge).
+    const badge = await waitFor(() => {
+      const el = document.querySelector('[data-autofix-state="failed"]');
+      if (!el) throw new Error("badge not failed yet");
+      return el;
+    });
+    expect(badge).toBeTruthy();
+    // And it must NOT be stuck on not_started.
+    expect(
+      document.querySelector('[data-autofix-state="not_started"]'),
+    ).toBeNull();
+  });
+
+  it("quick action dispatches the (edited) preset to the goal_run's chat session", async () => {
+    fixtures.issues = [
+      issue({
+        id: "i1",
+        number: 1,
+        identifier: "TES-1",
+        title: "Fix me",
+        metadata: {
+          autofix: { goal_run_ids: ["g1"], latest_goal_run_id: "g1" },
+        } as never,
+      }),
+    ];
+    fixtures.goalRun = { status: "running", chat_session_id: "cs-1" };
+    renderPage();
+
+    fireEvent.click(await screen.findByText(/Fix me/));
+    // Open the "Complete issue" quick action → preset textarea appears.
+    fireEvent.click(await screen.findByText("Complete issue"));
+    const textarea = await screen.findByPlaceholderText(/Edit the message/);
+    // The preset is pre-filled (the user can edit it).
+    expect((textarea as HTMLTextAreaElement).value).toContain("I confirm this issue");
+    // Dispatch → goes to the goal_run's chat session.
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() =>
+      expect(sendChatMessageMock).toHaveBeenCalledWith(
+        "cs-1",
+        expect.stringContaining("I confirm this issue"),
+      ),
+    );
+  });
+
+  it("quick actions are disabled (hint shown) when the run has no chat session", async () => {
+    fixtures.issues = [
+      issue({
+        id: "i1",
+        number: 1,
+        identifier: "TES-1",
+        title: "No session",
+        metadata: {
+          autofix: { goal_run_ids: ["g1"], latest_goal_run_id: "g1" },
+        } as never,
+      }),
+    ];
+    fixtures.goalRun = { status: "running", chat_session_id: "" };
+    renderPage();
+
+    fireEvent.click(await screen.findByText(/No session/));
+    expect(
+      await screen.findByText(/Assign an agent and bind a working directory/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Complete issue")).not.toBeInTheDocument();
+  });
+
+  it("not_started + eligible (project + agent) shows 启动修复 and calls startAutofix", async () => {
+    fixtures.issues = [
+      issue({
+        id: "i1",
+        number: 1,
+        identifier: "TES-1",
+        title: "Ready to fix",
+        project_id: "proj-1",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
+        // No autofix metadata yet → not_started.
+      }),
+    ];
+    fixtures.goalRun = null;
+    renderPage();
+
+    fireEvent.click(await screen.findByText(/Ready to fix/));
+    const startBtn = await screen.findByText("Start fix");
+    fireEvent.click(startBtn);
+    await waitFor(() => expect(startAutofixMock).toHaveBeenCalledWith("i1"));
+  });
+
+  it("not_started + NOT eligible (no project/agent) shows the hint, no Start fix", async () => {
+    fixtures.issues = [
+      issue({ id: "i1", number: 1, identifier: "TES-1", title: "Bare" }),
+    ];
+    fixtures.goalRun = null;
+    renderPage();
+
+    fireEvent.click(await screen.findByText(/Bare/));
+    expect(
+      await screen.findByText(/Assign an agent and bind a working directory/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Start fix")).not.toBeInTheDocument();
   });
 
   it("paste routes the file through the upload path", async () => {

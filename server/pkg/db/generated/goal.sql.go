@@ -881,6 +881,43 @@ func (q *Queries) SetGoalRunChatSession(ctx context.Context, arg SetGoalRunChatS
 	return i, err
 }
 
+const setGoalRunProject = `-- name: SetGoalRunProject :one
+UPDATE goal_run
+SET project_id = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, workspace_id, squad_id, chat_session_id, creator_id, title, goal, status, confirmed_at, completed_at, failure_reason, created_at, updated_at, project_id
+`
+
+type SetGoalRunProjectParams struct {
+	ID        pgtype.UUID `json:"id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+}
+
+// Bind (or clear) the task's working directory = dependency project. The project
+// is the role-sync source, the PMO's planning context, and what gates auto
+// repo-persist. Pass NULL to unbind.
+func (q *Queries) SetGoalRunProject(ctx context.Context, arg SetGoalRunProjectParams) (GoalRun, error) {
+	row := q.db.QueryRow(ctx, setGoalRunProject, arg.ID, arg.ProjectID)
+	var i GoalRun
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SquadID,
+		&i.ChatSessionID,
+		&i.CreatorID,
+		&i.Title,
+		&i.Goal,
+		&i.Status,
+		&i.ConfirmedAt,
+		&i.CompletedAt,
+		&i.FailureReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
 const setGoalSubtaskDependsOn = `-- name: SetGoalSubtaskDependsOn :one
 UPDATE goal_subtask
 SET depends_on = $2, updated_at = now()

@@ -32,6 +32,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@multica/ui/lib/utils";
 import type { Attachment as AttachmentRecord } from "@multica/core/types";
+import { resolveAssetUrl } from "@multica/core/api/asset-url";
 import { useT } from "../i18n";
 import { useAttachmentDownloadResolver } from "./attachment-download-context";
 import { useAttachmentPreview } from "./attachment-preview-modal";
@@ -100,7 +101,9 @@ function normalize(
     return {
       filename: input.attachment.filename,
       contentType: input.attachment.content_type,
-      url: input.attachment.url,
+      // Absolutize a site-relative `/uploads/…` URL against the API origin so it
+      // loads on desktop, where the renderer origin differs from the API origin.
+      url: resolveAssetUrl(input.attachment.url),
       attachmentId: input.attachment.id,
       record: input.attachment,
       uploading: false,
@@ -110,7 +113,9 @@ function normalize(
   return {
     filename: input.filename || record?.filename || "",
     contentType: input.contentType || record?.content_type || "",
-    url: input.url,
+    // Same cross-origin fix for inline editor / markdown image srcs. blob:/data:
+    // upload previews and absolute URLs pass through unchanged.
+    url: resolveAssetUrl(input.url),
     attachmentId: record?.id,
     record,
     uploading: !!input.uploading,

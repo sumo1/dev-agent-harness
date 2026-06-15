@@ -1,0 +1,52 @@
+{
+  "page": {
+    "title": "工作目录",
+    "description": "智能体运行所在的本地目录。绑定某台 daemon 机器上的文件夹，可选关联一个 git 仓库。Issue 创建时从这里选一个作为工作目录。",
+    "new": "新建工作目录",
+    "empty": "还没有工作目录",
+    "create_first": "添加第一个工作目录"
+  },
+  "list": {
+    "git_bound": "git",
+    "no_git": "无仓库",
+    "offline": "离线"
+  },
+  "form": {
+    "name": "名称",
+    "name_placeholder": "例如 multica",
+    "local_path": "本地路径",
+    "local_path_placeholder": "/Users/you/work/repo",
+    "local_path_hint": "所选机器上的绝对路径。",
+    "daemon": "机器",
+    "daemon_placeholder": "选择一台 daemon 机器",
+    "no_daemons": "没有在线的 daemon 机器，请先启动 daemon。",
+    "git_repo": "Git 仓库（可选）",
+    "git_repo_placeholder": "https://github.com/org/repo",
+    "git_repo_hint": "绑定 git 仓库后，智能体可建分支、开 PR。",
+    "create": "创建",
+    "save": "保存",
+    "cancel": "取消",
+    "edit_title": "编辑工作目录",
+    "create_title": "新建工作目录",
+    "choose_folder": "选择文件夹…",
+    "change_folder": "更换文件夹",
+    "folder_label": "文件夹",
+    "no_local_daemon": "请先启动本机 daemon，再选择本机上的文件夹。",
+    "web_unsupported": "选择文件夹仅在桌面端可用。",
+    "picked_hint": "名称取自文件夹，运行在本机。",
+    "git_none": "无 git 仓库（仅本地文件夹）"
+  },
+  "delete": {
+    "title": "删除工作目录？",
+    "body": "这会移除该目录绑定。引用过它的 issue 保留历史，但失去关联。",
+    "confirm": "删除",
+    "cancel": "取消"
+  },
+  "errors": {
+    "name_required": "名称必填",
+    "path_required": "本地路径必填",
+    "daemon_required": "请选择一台机器",
+    "save_failed": "保存工作目录失败",
+    "delete_failed": "删除工作目录失败"
+  }
+}

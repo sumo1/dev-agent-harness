@@ -162,6 +162,9 @@ const desktopAPI = {
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
+  /** Read a folder's git origin remote URL (empty for non-git folders). */
+  detectGitRemote: (path: string) =>
+    ipcRenderer.invoke("local-directory:git-remote", path),
 };
 
 interface DaemonStatus {

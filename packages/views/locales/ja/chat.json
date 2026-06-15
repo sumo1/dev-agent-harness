@@ -186,12 +186,17 @@
       "partial": "一部完了",
       "failed": "失敗",
       "cancelled": "キャンセル"
-    }
+    },
+    "working_dir": "作業ディレクトリ",
+    "pick_working_dir": "作業ディレクトリを選択",
+    "no_working_dir": "作業ディレクトリなし",
+    "working_dir_hint": "PMO が計画の根拠とし、エージェントが実行するリポジトリ。"
   },
   "session_list": {
     "title": "セッション",
     "empty_title": "セッションがありません",
-    "empty_hint": "右上の + をクリックして作成"
+    "empty_hint": "右上の + をクリックして作成",
+    "new_session": "新規セッション"
   },
   "new_dialog": {
     "title": "新しいチャット",

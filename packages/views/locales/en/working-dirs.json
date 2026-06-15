@@ -1,0 +1,52 @@
+{
+  "page": {
+    "title": "Working Dirs",
+    "description": "Local directories agents run in. Bind a folder on a daemon machine, optionally to a git repo. Issues pick one of these as their working directory.",
+    "new": "New working dir",
+    "empty": "No working directories yet",
+    "create_first": "Add your first working directory"
+  },
+  "list": {
+    "git_bound": "git",
+    "no_git": "no repo",
+    "offline": "offline"
+  },
+  "form": {
+    "name": "Name",
+    "name_placeholder": "e.g. multica",
+    "local_path": "Local path",
+    "local_path_placeholder": "/Users/you/work/repo",
+    "local_path_hint": "Absolute path on the selected machine.",
+    "daemon": "Machine",
+    "daemon_placeholder": "Select a daemon machine",
+    "no_daemons": "No daemon machines online. Start a daemon first.",
+    "git_repo": "Git repo (optional)",
+    "git_repo_placeholder": "https://github.com/org/repo",
+    "git_repo_hint": "Bind a git repository so agents can branch and open PRs.",
+    "create": "Create",
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit_title": "Edit working dir",
+    "create_title": "New working dir",
+    "choose_folder": "Choose a folder…",
+    "change_folder": "Change folder",
+    "folder_label": "Folder",
+    "no_local_daemon": "Start the local daemon to choose a folder on this machine.",
+    "web_unsupported": "Folder picking is only available in the desktop app.",
+    "picked_hint": "Name is taken from the folder; it runs on this machine.",
+    "git_none": "No git repo (local folder only)"
+  },
+  "delete": {
+    "title": "Delete working dir?",
+    "body": "This removes the directory binding. Issues that referenced it keep their history but lose the link.",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
+  "errors": {
+    "name_required": "Name is required",
+    "path_required": "Local path is required",
+    "daemon_required": "Select a machine",
+    "save_failed": "Couldn't save the working directory",
+    "delete_failed": "Couldn't delete the working directory"
+  }
+}

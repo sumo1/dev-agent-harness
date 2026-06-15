@@ -23,7 +23,33 @@
       "not_started": "Auto-fix not started",
       "running": "Auto-fix in progress",
       "completed": "Auto-fix completed",
-      "needs_info": "Needs more info"
+      "needs_info": "Needs more info",
+      "failed": "Auto-fix failed"
+    },
+    "quick_actions": {
+      "title": "Quick actions",
+      "disabled_hint": "Assign an agent and bind a working directory to start a fix first.",
+      "retry": "Retry fix",
+      "needs_info": "Add info",
+      "new_worktree": "New worktree",
+      "complete": "Complete issue",
+      "freeform": "Follow up",
+      "send": "Send",
+      "cancel": "Cancel",
+      "placeholder": "Edit the message before sending…",
+      "sent": "Sent to the agent",
+      "send_failed": "Couldn't send the message",
+      "preset": {
+        "retry": "Please try fixing this issue again.{reason} Adjust your approach accordingly and run it once more.",
+        "needs_info": "Here is more information to help you reproduce / fix it:\n(write reproduction steps, environment, expected behavior…)",
+        "new_worktree": "Create a fresh worktree/branch in this repository to work on this issue, following the repo's own conventions.",
+        "complete": "I confirm this issue is fixed and complete. Please wrap it up following this repository's conventions — you decide whether to open a PR (push a branch + open a PR to merge into the main branch) or whatever way fits — and land the changes.",
+        "freeform": ""
+      },
+      "reason_prefix": " Last result:",
+      "start": "Start fix",
+      "start_sent": "Auto-fix started",
+      "start_failed": "Couldn't start the fix"
     }
   },
   "status": {

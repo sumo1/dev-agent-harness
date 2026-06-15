@@ -71,6 +71,16 @@ interface DesktopAPI {
       | "error";
     error?: string;
   }>;
+  /** Read a folder's `origin` git remote URL, to auto-fill the working-dir
+   *  git binding. A non-git folder returns ok=false with a benign reason. */
+  detectGitRemote: (
+    path: string,
+  ) => Promise<{
+    ok: boolean;
+    url?: string;
+    reason?: "not_absolute" | "not_git" | "no_remote" | "error";
+    error?: string;
+  }>;
 }
 
 interface DaemonStatus {
