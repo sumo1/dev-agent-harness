@@ -7,11 +7,19 @@ import (
 	"testing"
 )
 
+func isolateDaemonSetupEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("MULTICA_PUBLIC_URL", "")
+	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("FRONTEND_ORIGIN", "")
+}
+
 func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	origStorage := testHandler.Storage
 	testHandler.Storage = &mockStorage{}
 	defer func() { testHandler.Storage = origStorage }()
 
+	isolateDaemonSetupEnv(t)
 	t.Setenv("ALLOW_SIGNUP", "false")
 	t.Setenv("GOOGLE_CLIENT_ID", "google-client-id")
 	t.Setenv("POSTHOG_API_KEY", "phc_test")
@@ -62,6 +70,7 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 }
 
 func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
+	isolateDaemonSetupEnv(t)
 	t.Setenv("MULTICA_APP_URL", "https://multica.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
@@ -85,6 +94,7 @@ func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
 }
 
 func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
+	isolateDaemonSetupEnv(t)
 	t.Setenv("FRONTEND_ORIGIN", "https://multica.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
@@ -108,6 +118,7 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 }
 
 func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
+	isolateDaemonSetupEnv(t)
 	t.Setenv("MULTICA_PUBLIC_URL", "https://api.multica.ai")
 	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
 

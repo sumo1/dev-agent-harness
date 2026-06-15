@@ -31,17 +31,14 @@ func setupRerunTestFixture(t *testing.T) (string, string, string) {
 		t.Fatalf("failed to find test agent: %v", err)
 	}
 
+	issueNumber := nextIntegrationIssueNumber(t, ctx, testWorkspaceID)
 	var issueID string
-	// Pick the next per-workspace number to avoid colliding with the
-	// uq_issue_workspace_number unique constraint when multiple fixtures
-	// coexist in the same test (e.g. TestRerunIssueRejectsCrossIssueTask).
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
-		SELECT $1, 'Rerun test issue', 'todo', 'none', 'member', m.user_id, 'agent', $2,
-		       (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1)
+		SELECT $1, 'Rerun test issue', 'todo', 'none', 'member', m.user_id, 'agent', $2, $3
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
-	`, testWorkspaceID, agentID).Scan(&issueID); err != nil {
+	`, testWorkspaceID, agentID, issueNumber).Scan(&issueID); err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
 	}
 
@@ -515,18 +512,15 @@ func TestRerunIssueRejectsCrossIssueTask(t *testing.T) {
 	ctx := context.Background()
 
 	// Second issue in the same workspace, with a task that does NOT belong
-	// to issue A. The handler must reject this. Take the next available
-	// per-workspace number so the uq_issue_workspace_number constraint
-	// (both issues default to number=0 otherwise) doesn't fire before the
-	// rerun assertion can.
+	// to issue A. The handler must reject this.
+	issueNumber := nextIntegrationIssueNumber(t, ctx, testWorkspaceID)
 	var issueBID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
-		SELECT $1, 'Rerun cross-issue test', 'todo', 'none', 'member', m.user_id, 'agent', $2,
-		       (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1)
+		SELECT $1, 'Rerun cross-issue test', 'todo', 'none', 'member', m.user_id, 'agent', $2, $3
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
-	`, testWorkspaceID, agentID).Scan(&issueBID); err != nil {
+	`, testWorkspaceID, agentID, issueNumber).Scan(&issueBID); err != nil {
 		t.Fatalf("create second issue: %v", err)
 	}
 	t.Cleanup(func() { cleanupRerunFixture(t, issueBID) })

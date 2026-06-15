@@ -29,14 +29,15 @@ func setupSweeperTestFixture(t *testing.T, taskStatus string) (string, string, s
 		t.Fatalf("failed to find test agent: %v", err)
 	}
 
-	// Create an issue assigned to the agent
+	// Create an issue assigned to the agent.
+	issueNumber := nextIntegrationIssueNumber(t, ctx, testWorkspaceID)
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
-		SELECT $1, 'Sweeper test issue', 'todo', 'none', 'member', m.user_id, 'agent', $2
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+		SELECT $1, 'Sweeper test issue', 'todo', 'none', 'member', m.user_id, 'agent', $2, $3
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
-	`, testWorkspaceID, agentID).Scan(&issueID)
+	`, testWorkspaceID, agentID, issueNumber).Scan(&issueID)
 	if err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
 	}
@@ -370,13 +371,14 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	}
 
 	// Create an issue already in in_progress (simulates a daemon crash mid-run).
+	issueNumber := nextIntegrationIssueNumber(t, ctx, testWorkspaceID)
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
-		SELECT $1, 'Stuck in_progress issue', 'in_progress', 'none', 'member', m.user_id, 'agent', $2
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+		SELECT $1, 'Stuck in_progress issue', 'in_progress', 'none', 'member', m.user_id, 'agent', $2, $3
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
-	`, testWorkspaceID, agentID).Scan(&issueID)
+	`, testWorkspaceID, agentID, issueNumber).Scan(&issueID)
 	if err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
 	}
@@ -456,13 +458,14 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 	}
 
 	// Issue already advanced to in_review by the agent before the task timed out.
+	issueNumber := nextIntegrationIssueNumber(t, ctx, testWorkspaceID)
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
-		SELECT $1, 'Already in_review issue', 'in_review', 'none', 'member', m.user_id, 'agent', $2
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+		SELECT $1, 'Already in_review issue', 'in_review', 'none', 'member', m.user_id, 'agent', $2, $3
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
-	`, testWorkspaceID, agentID).Scan(&issueID)
+	`, testWorkspaceID, agentID, issueNumber).Scan(&issueID)
 	if err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
 	}

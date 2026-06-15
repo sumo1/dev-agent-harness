@@ -32,6 +32,10 @@ For self-dogfooding this repository, load
 the active control plane separate from the candidate worktree. Scripts remain in
 `scripts/`; Skills decide when and how to use them.
 
+For desktop E2E, Electron UI verification, screenshots, Accessibility
+inspection, or trace evidence, load
+`.agents/skills/computer-use-desktop-e2e/SKILL.md` before verification.
+
 ## Project Context
 
 Multica is an AI-native task management platform — like Linear, but with AI agents as first-class citizens.

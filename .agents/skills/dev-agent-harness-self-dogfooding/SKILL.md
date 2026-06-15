@@ -77,6 +77,10 @@ that edit through the harness.
    `DESKTOP_RENDERER_PORT`, `VITE_API_URL`, `VITE_WS_URL`, and `VITE_APP_URL`, so
    it gets an isolated Electron userData path and talks to the candidate backend.
 
+   For desktop E2E, also load
+   `.agents/skills/computer-use-desktop-e2e/SKILL.md` and use
+   `computer-use-harness` for real desktop evidence.
+
 4. In the stable control plane UI, attach the candidate path as the project
    `local_directory`.
 

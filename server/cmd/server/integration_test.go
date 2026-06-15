@@ -164,6 +164,20 @@ func cleanupIntegrationTestFixture(ctx context.Context, pool *pgxpool.Pool) erro
 	return nil
 }
 
+func nextIntegrationIssueNumber(t *testing.T, ctx context.Context, workspaceID string) int32 {
+	t.Helper()
+
+	var number int32
+	if err := testPool.QueryRow(ctx, `
+		UPDATE workspace SET issue_counter = issue_counter + 1
+		WHERE id = $1
+		RETURNING issue_counter
+	`, workspaceID).Scan(&number); err != nil {
+		t.Fatalf("increment issue counter: %v", err)
+	}
+	return number
+}
+
 // Helper to make authenticated requests
 func authRequest(t *testing.T, method, path string, body any) *http.Response {
 	t.Helper()

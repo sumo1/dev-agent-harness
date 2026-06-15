@@ -48,19 +48,16 @@ func addTestSubscriber(t *testing.T, issueID, userType, userID, reason string) {
 }
 
 // createTestSubIssue inserts an issue with parent_issue_id set and returns its UUID.
-// Picks the next per-workspace number to avoid colliding with the
-// uq_issue_workspace_number unique constraint (parent + sub created in the
-// same test would otherwise both default to number=0).
 func createTestSubIssue(t *testing.T, workspaceID, creatorID, parentIssueID string) string {
 	t.Helper()
 	ctx := context.Background()
+	issueNumber := nextIntegrationIssueNumber(t, ctx, workspaceID)
 	var issueID string
 	err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, parent_issue_id, number)
-		VALUES ($1, 'sub-issue test', 'todo', 'medium', 'member', $2, 0, $3,
-		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
+		VALUES ($1, 'sub-issue test', 'todo', 'medium', 'member', $2, 0, $3, $4)
 		RETURNING id
-	`, workspaceID, creatorID, parentIssueID).Scan(&issueID)
+	`, workspaceID, creatorID, parentIssueID, issueNumber).Scan(&issueID)
 	if err != nil {
 		t.Fatalf("createTestSubIssue: %v", err)
 	}
@@ -538,8 +535,8 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 				AssigneeType: &newAssigneeType,
 				AssigneeID:   &newAssigneeID,
 			},
-			"assignee_changed":  true,
-			"status_changed":    false,
+			"assignee_changed":   true,
+			"status_changed":     false,
 			"prev_assignee_type": &oldAssigneeType,
 			"prev_assignee_id":   &oldAssigneeID,
 		},

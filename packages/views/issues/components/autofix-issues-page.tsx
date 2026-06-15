@@ -9,7 +9,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { issueListOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
 import { useCreateIssue, useUpdateIssue } from "@multica/core/issues/mutations";
 import { goalRunOptions } from "@multica/core/goals/queries";
-import { deriveAutofixStatus, parseAutofixMetadata } from "@multica/core/issues/autofix";
+import { deriveAutofixStatus, parseAutofixMetadata } from "@multica/core/issues";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import type {

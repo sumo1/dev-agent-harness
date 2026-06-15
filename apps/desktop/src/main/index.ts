@@ -283,10 +283,11 @@ function createWindow(): void {
 // without fighting for the shared single-instance lock. The suffix is
 // appended to the app name + userData path, so each worktree gets its own
 // lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Multica Canary".
+// single-worktree case still lands at "Dev Agent Harness Canary".
+const DEV_APP_BASE_NAME = "Dev Agent Harness Canary";
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Multica Canary";
+  ? `${DEV_APP_BASE_NAME} ${process.env.DESKTOP_APP_SUFFIX}`
+  : DEV_APP_BASE_NAME;
 
 if (is.dev) {
   app.setName(DEV_APP_NAME);

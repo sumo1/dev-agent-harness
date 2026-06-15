@@ -22,6 +22,10 @@ load `.agents/skills/dev-agent-harness-self-dogfooding/SKILL.md`; never run
 implementation or verification against the checkout that is currently
 dispatching tasks.
 
+For desktop E2E, Electron UI verification, screenshots, Accessibility
+inspection, or trace evidence, load
+`.agents/skills/computer-use-desktop-e2e/SKILL.md` before verification.
+
 ## Quick Reference
 
 ### Architecture

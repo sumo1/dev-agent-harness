@@ -17,6 +17,14 @@
 
 ## 启动顺序
 
+0. 如果验证目标包含桌面端 UI、Electron 交互、截图、Accessibility 状态或 trace 证据，先读：
+
+   ```bash
+   .agents/skills/computer-use-desktop-e2e/SKILL.md
+   ```
+
+   这个 Skill 负责触发 `computer-use-harness`；本文档只保留阶段说明和常见坑。
+
 1. 先确认验证目标。
 
    - 普通本机验证：常见入口是 `pnpm dev:desktop`，它负责 Electron + electron-vite HMR。
