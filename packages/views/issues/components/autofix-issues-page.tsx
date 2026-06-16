@@ -24,6 +24,19 @@ import {
 } from "@multica/core/issues/queries";
 import { useCreateIssue, useUpdateIssue } from "@multica/core/issues/mutations";
 import { goalRunOptions } from "@multica/core/goals/queries";
+import { chatMessagesOptions, pendingChatTaskOptions } from "@multica/core/chat/queries";
+import { agentListOptions } from "@multica/core/workspace/queries";
+import { ChatMessageList } from "../../chat/components/chat-message-list";
+import { ChatInput } from "../../chat/components/chat-input";
+import { TaskStream } from "../../tasks/components/task-stream";
+import { GoalStatusTree } from "../../assistant/components/goal-status-tree";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@multica/ui/components/ui/popover";
+import { ListTree, ChevronDown } from "lucide-react";
+import type { GoalRun, GoalSubtask } from "@multica/core/types";
 import { deriveAutofixStatus, parseAutofixMetadata } from "@multica/core/issues";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
@@ -312,24 +325,26 @@ function IssueDetailColumn({ issue }: { issue: Issue }) {
   }, [slug, latestRunId, issue.id, push]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="border-b px-5 py-4">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Fixed header: identity + pickers + state + quick actions. */}
+      <div className="shrink-0 border-b px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{issue.identifier}</p>
             <h1 className="mt-0.5 text-base font-semibold text-foreground">{issue.title}</h1>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 gap-1.5 text-xs"
-            onClick={handleJumpToAssistant}
-            disabled={!latestRunId}
-            title={t(($) => $.autofix_page.jump_to_assistant)}
-          >
-            <ExternalLink className="size-3.5" />
-            {t(($) => $.autofix_page.jump_to_assistant)}
-          </Button>
+          {goalRun?.chat_session_id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground"
+              onClick={handleJumpToAssistant}
+              title={t(($) => $.autofix_page.jump_to_assistant)}
+            >
+              <ExternalLink className="size-3.5" />
+              {t(($) => $.autofix_page.jump_to_assistant)}
+            </Button>
+          )}
         </div>
 
         {/* Assignee + project pickers. Picking an agent on a project-bound
@@ -359,28 +374,180 @@ function IssueDetailColumn({ issue }: { issue: Issue }) {
         />
       </div>
 
-      <div className="flex flex-col gap-4 px-5 py-4">
-        {images.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {images.map((img) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={img.id}
-                src={img.download_url || img.url}
-                alt={img.filename}
-                className="h-28 w-28 rounded-md border object-cover"
-              />
-            ))}
-          </div>
-        )}
+      {/* Body. When the issue has an auto-fix run, the detail IS the closed loop:
+          the agent's replies + planning/subtask execution streams + a live input
+          to keep the conversation going — no need to leave for the assistant
+          page (which is now just a record). Without a run, show the static
+          description/images. */}
+      {goalRun?.chat_session_id ? (
+        <IssueConversation goal={goalRun} />
+      ) : (
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {images.map((img) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={img.id}
+                  src={img.download_url || img.url}
+                  alt={img.filename}
+                  className="h-28 w-28 rounded-md border object-cover"
+                />
+              ))}
+            </div>
+          )}
 
-        {issue.description ? (
-          <ReadonlyContent content={issue.description} attachments={attachments} />
+          {issue.description ? (
+            <ReadonlyContent content={issue.description} attachments={attachments} />
+          ) : (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <ImageOff className="size-4" />
+              {t(($) => $.autofix_page.no_description)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The issue's auto-fix conversation — the closed-loop work surface. Renders the
+ * goal_run's discussion messages (the agent's replies) with the planning +
+ * summary execution streams interleaved at the confirm gate, a status-tree
+ * popover to inspect/switch subtasks, and a pinned input to keep talking — all
+ * the same primitives the tasks/assistant pages use. The user resolves the
+ * issue here; the assistant page is just a mirror/record.
+ */
+function IssueConversation({ goal }: { goal: GoalRun }) {
+  const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const sessionId = goal.chat_session_id;
+  const { data: messages = [] } = useQuery(chatMessagesOptions(sessionId));
+  const { data: pendingTask } = useQuery(pendingChatTaskOptions(sessionId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const [activeSubtaskId, setActiveSubtaskId] = useState<string | null>(null);
+
+  const resolveAgentName = useCallback(
+    (id: string) => agents.find((a) => a.id === id)?.name,
+    [agents],
+  );
+  const activeSubtask = goal.subtasks.find((s) => s.id === activeSubtaskId) ?? null;
+
+  const handleSend = useCallback(
+    async (content: string) => {
+      try {
+        await api.sendChatMessage(sessionId, content);
+      } catch (e) {
+        logger.error("issue conversation send failed", e);
+      }
+    },
+    [sessionId],
+  );
+  const handleStop = useCallback(() => {
+    if (pendingTask?.task_id) api.cancelTaskById(pendingTask.task_id).catch(() => {});
+  }, [pendingTask?.task_id]);
+
+  const done = goal.subtasks.filter((s) => s.status === "completed").length;
+  const total = goal.subtasks.length;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Status-tree switcher (subtasks). Read-only; act via quick actions above. */}
+      {total > 0 && (
+        <div className="flex shrink-0 items-center justify-end border-b px-4 py-1.5">
+          <Popover>
+            <PopoverTrigger
+              render={<Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" />}
+            >
+              <ListTree className="h-3.5 w-3.5" />
+              {t(($) => $.autofix_page.execution)}
+              <span className="font-mono tabular-nums text-muted-foreground/70">
+                {done}/{total}
+              </span>
+              <ChevronDown className="h-3 w-3 opacity-60" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="max-h-[70vh] w-[360px] overflow-y-auto p-0">
+              <GoalStatusTree
+                goal={goal}
+                resolveAgentName={resolveAgentName}
+                selectedSubtaskId={activeSubtaskId}
+                onSelectMain={() => setActiveSubtaskId(null)}
+                onSelectSubtask={setActiveSubtaskId}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {activeSubtask ? (
+          <SubtaskStream subtask={activeSubtask} t={t} />
         ) : (
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <ImageOff className="size-4" />
-            {t(($) => $.autofix_page.no_description)}
-          </p>
+          <ChatMessageList
+            messages={messages}
+            pendingTask={pendingTask}
+            availability={undefined}
+            timelineInsert={
+              goal.planning_task_id
+                ? {
+                    afterTs: goal.confirmed_at,
+                    content: (
+                      <div className="space-y-3 border-y py-3">
+                        <TaskStream
+                          taskId={goal.planning_task_id}
+                          running={goal.status === "planning"}
+                        />
+                        {goal.summary_task_id && (
+                          <TaskStream
+                            taskId={goal.summary_task_id}
+                            running={goal.status === "executing"}
+                          />
+                        )}
+                      </div>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+      </div>
+
+      <ChatInput
+        onSend={handleSend}
+        onUploadFile={async () => null}
+        onStop={handleStop}
+        isRunning={!!pendingTask?.task_id}
+        disabled={false}
+      />
+    </div>
+  );
+}
+
+/** Read-only stream for one subtask (title + spec + failure + transcript). */
+function SubtaskStream({
+  subtask,
+  t,
+}: {
+  subtask: GoalSubtask;
+  t: ReturnType<typeof useT<"issues">>["t"];
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
+      <div className="border-b pb-2">
+        <h4 className="mb-1 font-medium text-foreground">{subtask.title}</h4>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{subtask.spec}</p>
+      </div>
+      {subtask.failure_reason && (
+        <div className="mt-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+          {subtask.failure_reason}
+        </div>
+      )}
+      <div className="mt-3">
+        {subtask.task_id ? (
+          <TaskStream taskId={subtask.task_id} running={subtask.status === "running"} />
+        ) : (
+          <p className="text-xs text-muted-foreground">{t(($) => $.autofix_page.no_description)}</p>
         )}
       </div>
     </div>
@@ -483,6 +650,9 @@ function QuickActions({
   const qc = useQueryClient();
   const [openKey, setOpenKey] = useState<QuickActionKey | null>(null);
   const [draft, setDraft] = useState("");
+  // Whether the "start fix needs project/agent" guide is revealed (shown after
+  // the user clicks Start while the issue isn't yet eligible).
+  const [showStartGuide, setShowStartGuide] = useState(false);
 
   const sendMessage = useMutation({
     mutationFn: (content: string) => api.sendChatMessage(chatSessionId, content),
@@ -533,10 +703,18 @@ function QuickActions({
 
   const openAction = useCallback(
     (key: QuickActionKey) => {
+      // Retry on a FAILED run can't be a chat message: a planning-failure (e.g.
+      // the LLM socket dropped mid-plan) leaves the run dead with no subtask to
+      // talk to, and sending to its discussion session does nothing. The true
+      // "retry the fix" re-triggers autofix, which spawns a fresh goal_run.
+      if (key === "retry" && status.state === "failed") {
+        startAutofix.mutate();
+        return;
+      }
       setOpenKey(key);
       setDraft(presetFor(key));
     },
-    [presetFor],
+    [presetFor, status.state, startAutofix],
   );
 
   const dispatch = useCallback(async () => {
@@ -552,28 +730,46 @@ function QuickActions({
     }
   }, [draft, chatSessionId, sendMessage, t]);
 
-  // No run / no discussion session yet. If the issue is eligible, offer a
-  // one-click "start fix" (creates the run); otherwise explain what's missing.
+  // No run / no discussion session yet → the only action is "start fix". The
+  // button is ALWAYS shown (so it never silently disappears); when the issue
+  // isn't yet eligible, clicking surfaces a guide naming exactly what to bind
+  // (the working-dir + assignee pickers sit right above this in the detail
+  // header), instead of firing a request that 400s.
   if (!chatSessionId) {
-    if (canStartAutofix) {
-      return (
-        <div className="mt-3">
-          <Button
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => startAutofix.mutate()}
-            disabled={startAutofix.isPending}
-          >
-            <Play className="size-3.5" />
-            {t(($) => $.autofix_page.quick_actions.start)}
-          </Button>
-        </div>
-      );
-    }
+    const missingProject = !issue.project_id;
+    const missingAgent = !(
+      (issue.assignee_type === "agent" || issue.assignee_type === "squad") &&
+      !!issue.assignee_id
+    );
+    const onStartClick = () => {
+      if (canStartAutofix) {
+        startAutofix.mutate();
+      } else {
+        // Reveal the guide; the pickers to satisfy it are in the header above.
+        setShowStartGuide(true);
+      }
+    };
     return (
-      <p className="mt-3 text-xs text-muted-foreground/70">
-        {t(($) => $.autofix_page.quick_actions.disabled_hint)}
-      </p>
+      <div className="mt-3 space-y-1.5">
+        <Button
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={onStartClick}
+          disabled={startAutofix.isPending}
+        >
+          <Play className="size-3.5" />
+          {t(($) => $.autofix_page.quick_actions.start)}
+        </Button>
+        {showStartGuide && !canStartAutofix && (
+          <p className="text-xs text-warning">
+            {missingProject && missingAgent
+              ? t(($) => $.autofix_page.quick_actions.start_need_both)
+              : missingProject
+                ? t(($) => $.autofix_page.quick_actions.start_need_project)
+                : t(($) => $.autofix_page.quick_actions.start_need_agent)}
+          </p>
+        )}
+      </div>
     );
   }
 

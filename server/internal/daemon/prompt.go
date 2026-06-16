@@ -443,6 +443,24 @@ func buildChatPrompt(task Task) string {
 		}
 		b.WriteString("Use the user's guidance below to get it right this time.\n\n")
 	}
+	// Goal context: this chat drives a task-mode / autofix goal_run. Inject the
+	// goal title + text (for an autofix run that's the issue title+description)
+	// so a follow-up message carries it. Critical for issue quick-actions like
+	// "retry the fix" sent AFTER planning — without this the agent only sees the
+	// bare message and has no idea which issue/problem it refers to. Skipped when
+	// the discussion-facilitation block below already prints the same goal text.
+	if !task.GoalDiscussionActive &&
+		(strings.TrimSpace(task.GoalContextGoal) != "" || task.GoalContextTitle != "") {
+		b.WriteString("## Task context\n")
+		b.WriteString("This conversation drives an existing task/issue. The user's message below is a follow-up about it — act on THIS goal, do not go looking for which issue it means.\n")
+		if task.GoalContextTitle != "" {
+			fmt.Fprintf(&b, "Title: %s\n", task.GoalContextTitle)
+		}
+		if strings.TrimSpace(task.GoalContextGoal) != "" {
+			fmt.Fprintf(&b, "Goal / problem:\n%s\n", task.GoalContextGoal)
+		}
+		b.WriteString("\n")
+	}
 	// Discussion facilitation: this chat drives a task-mode goal still in the
 	// 'discussion' phase. The agent is the 总控 (coordinator) and its job here is
 	// NOT to start doing the work — it is to help the user shape a fuzzy ask into
@@ -462,6 +480,19 @@ func buildChatPrompt(task Task) string {
 		b.WriteString("- Reflect your current understanding back as a concise goal statement (a \"task card\") so the user can correct it. Converge — don't interrogate endlessly; once it's clear enough to execute, say so.\n")
 		b.WriteString("- If the goal would benefit from roles not yet on the squad, suggest which to add (the user manages members from the task page).\n")
 		b.WriteString("- Do NOT call any CLI to create issues, plan, or dispatch work. When the goal is clear, tell the user to click \"Confirm & execute\" to start planning — confirmation is the user's action, not yours.\n\n")
+	}
+	// Bound working directory / repo: this chat's goal is bound to a project, so
+	// the daemon runs you INSIDE its repo. Tell the agent which project it is and
+	// that "the current project" means this one — otherwise it claims it doesn't
+	// know which repo, even though the user picked a working directory.
+	if task.ProjectID != "" {
+		b.WriteString("## Working directory\n")
+		if task.ProjectTitle != "" {
+			fmt.Fprintf(&b, "This conversation is bound to the project %q. You are running inside its repository/working directory — \"the current project\" refers to it.\n", task.ProjectTitle)
+		} else {
+			b.WriteString("This conversation is bound to a project. You are running inside its repository/working directory — \"the current project\" refers to it.\n")
+		}
+		b.WriteString("Inspect the actual files in your working directory to answer; don't claim there's no repo without looking.\n\n")
 	}
 	if task.Agent != nil && len(task.Agent.Skills) > 0 {
 		refs := ExtractSlashSkills(task.ChatMessage)

@@ -382,3 +382,69 @@ func TestClaimDiscussionChatMarksGoalDiscussionActive(t *testing.T) {
 		t.Fatal("once the goal leaves 'discussion', the chat must NOT be marked goal_discussion_active")
 	}
 }
+
+// TestClaimDiscussionChatCarriesRepoContext locks in the fix for the
+// "working directory not reaching the discussion chat" bug: when a task-mode
+// discussion chat is bound to a goal_run that itself is bound to a project,
+// claiming the chat task MUST surface that project's id + local_directory
+// resource — exactly like planning/subtask/persist claims do.
+//
+// Without this, the discussion agent (a) had no project info in its prompt and
+// (b) did NOT run inside the project's repo, so asking "describe the current
+// project's architecture" got "there's no repo here, which project do you mean?".
+func TestClaimDiscussionChatCarriesRepoContext(t *testing.T) {
+	ctx := context.Background()
+	runtimeID := createClaimReclaimRuntime(t, ctx, "Discussion repo runtime")
+	agentID, _ := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Discussion repo agent")
+	projectID := makeRepoProject(t, ctx, "discussion-repo-proj")
+
+	var squadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'discussion-repo-squad', '', $2, $3) RETURNING id
+	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM squad WHERE id = $1`, squadID) })
+
+	// A discussion-phase goal_run BOUND TO THE PROJECT (this is what the
+	// WorkingDirPicker sets when the user picks a working dir for the chat).
+	var goalRunID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO goal_run (workspace_id, squad_id, project_id, creator_id, title, goal, status)
+		VALUES ($1, $2, $3, $4, 'Architecture review', 'describe the architecture', 'discussion')
+		RETURNING id
+	`, testWorkspaceID, squadID, projectID, testUserID).Scan(&goalRunID); err != nil {
+		t.Fatalf("create goal_run: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM goal_run WHERE id = $1`, goalRunID) })
+
+	var chatID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, goal_run_id)
+		VALUES ($1, $2, $3, 'discussion', $4, $5) RETURNING id
+	`, testWorkspaceID, agentID, testUserID, runtimeID, goalRunID).Scan(&chatID); err != nil {
+		t.Fatalf("create chat session: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM chat_session WHERE id = $1`, chatID) })
+
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO chat_message (chat_session_id, role, content)
+		VALUES ($1, 'user', 'describe the current project architecture')
+	`, chatID); err != nil {
+		t.Fatalf("create chat message: %v", err)
+	}
+
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
+		VALUES ($1, $2, $3, 'queued', 5)
+	`, agentID, runtimeID, chatID); err != nil {
+		t.Fatalf("create chat task: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE chat_session_id = $1`, chatID)
+	})
+
+	// Reuse the shared assertion: the claim must carry project_id + local_directory.
+	claimAndCheckLocalDir(t, runtimeID, projectID, "discussion-chat")
+}

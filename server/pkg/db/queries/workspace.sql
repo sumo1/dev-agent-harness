@@ -2,7 +2,7 @@
 SELECT w.id, w.name, w.slug, w.description, w.settings,
        w.created_at, w.updated_at, w.context, w.repos,
        w.issue_prefix, w.issue_counter, w.avatar_url,
-       w.default_planner_agent_id
+       w.default_planner_agent_id, w.default_chat_agent_id
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -38,6 +38,15 @@ RETURNING *;
 -- Sets the workspace's default PMO/planner agent (task mode). NULL clears it.
 UPDATE workspace SET
     default_planner_agent_id = sqlc.narg('default_planner_agent_id'),
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: SetWorkspaceDefaultChatAgent :one
+-- Caches the workspace's managed default chat agent (the "talk to a runtime"
+-- agent used when a session is created without picking an agent). NULL clears it.
+UPDATE workspace SET
+    default_chat_agent_id = sqlc.narg('default_chat_agent_id'),
     updated_at = now()
 WHERE id = $1
 RETURNING *;

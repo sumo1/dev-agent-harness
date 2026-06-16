@@ -616,16 +616,16 @@ func TestBuildGoalPlanningPromptAutofix(t *testing.T) {
 	})
 
 	mustContain := []string{
-		"AUTO-FIX run",      // explicit autofix framing
-		"GitHub issue",      // N1 intent: file the issue upstream
-		"issue number",      // N1 reports back the number
-		"depends_on",        // chained DAG
-		"end to end",        // N3 verify intent
-		"more information is needed", // N3 needs-info report path
-		"pull request",      // N4 intent: open the PR
+		"AUTO-FIX run",                      // explicit autofix framing
+		"GitHub issue",                      // N1 intent: file the issue upstream
+		"issue number",                      // N1 reports back the number
+		"depends_on",                        // chained DAG
+		"end to end",                        // N3 verify intent
+		"more information is needed",        // N3 needs-info report path
+		"pull request",                      // N4 intent: open the PR
 		"reference the GitHub issue number", // PR body references N1's issue
-		"read",              // "read this repo's existing conventions first"
-		"conventions",       // convention-first steering
+		"read",                              // "read this repo's existing conventions first"
+		"conventions",                       // convention-first steering
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {
@@ -904,5 +904,80 @@ func TestBuildChatPromptDiscussionFacilitation(t *testing.T) {
 	plain := buildChatPrompt(Task{ChatSessionID: "cs-2", ChatMessage: "hi"})
 	if strings.Contains(plain, "总控 (coordinator) in a task discussion") {
 		t.Errorf("plain chat prompt should not carry discussion facilitation:\n%s", plain)
+	}
+}
+
+// TestBuildChatPromptGoalContext locks the fix for "issue quick-action loses
+// context": a follow-up message on a goal-bound session (NOT in the discussion
+// phase — e.g. an autofix run that already planned) must carry the goal/issue
+// title + text so the agent acts on THIS issue instead of hunting for one.
+func TestBuildChatPromptGoalContext(t *testing.T) {
+	out := buildChatPrompt(Task{
+		ChatSessionID:    "cs-1",
+		ChatMessage:      "重新尝试修复这个问题",
+		GoalContextTitle: "登录按钮点击无反应",
+		GoalContextGoal:  "登录按钮点击无反应\n\n点登录没有任何反应。",
+	})
+	for _, want := range []string{
+		"Task context",                // the orienting header
+		"do not go looking for which", // don't hunt for the issue
+		"登录按钮点击无反应",                   // issue title injected
+		"点登录没有任何反应",                   // issue description injected
+		"重新尝试修复这个问题",                  // the user's message still present
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("goal-context chat prompt missing %q\n---\n%s", want, out)
+		}
+	}
+
+	// In the discussion phase the facilitation block owns the goal text — the
+	// duplicate "Task context" block must NOT also render.
+	disc := buildChatPrompt(Task{
+		ChatSessionID:        "cs-2",
+		ChatMessage:          "hi",
+		GoalDiscussionActive: true,
+		GoalDiscussionGoal:   "x",
+		GoalContextTitle:     "x",
+		GoalContextGoal:      "x",
+	})
+	if strings.Contains(disc, "## Task context") {
+		t.Errorf("discussion-phase chat must not also render the Task context block:\n%s", disc)
+	}
+
+	// A plain chat (no goal binding) carries no Task context block.
+	plain := buildChatPrompt(Task{ChatSessionID: "cs-3", ChatMessage: "hi"})
+	if strings.Contains(plain, "## Task context") {
+		t.Errorf("plain chat must not carry a Task context block:\n%s", plain)
+	}
+}
+
+// TestBuildChatPromptWorkingDir locks the fix for "I picked a working directory
+// but the agent says it doesn't know which project": a goal-bound chat carrying
+// a ProjectID must tell the agent it's inside that project's repo, so "the
+// current project" resolves and it doesn't claim there's no repo.
+func TestBuildChatPromptWorkingDir(t *testing.T) {
+	out := buildChatPrompt(Task{
+		ChatSessionID:        "cs-1",
+		ChatMessage:          "给出当前工程的架构说明",
+		GoalDiscussionActive: true,
+		GoalDiscussionGoal:   "x",
+		ProjectID:            "proj-1",
+		ProjectTitle:         "multica-sumo",
+	})
+	for _, want := range []string{
+		"Working directory",
+		"multica-sumo",                // the bound project name
+		"the current project",         // resolves "当前工程"
+		"don't claim there's no repo", // anti the exact failure mode observed
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("working-dir chat prompt missing %q\n---\n%s", want, out)
+		}
+	}
+
+	// No ProjectID → no Working directory block.
+	plain := buildChatPrompt(Task{ChatSessionID: "cs-2", ChatMessage: "hi"})
+	if strings.Contains(plain, "## Working directory") {
+		t.Errorf("chat without a project must not carry a Working directory block:\n%s", plain)
 	}
 }

@@ -65,6 +65,8 @@ type Task struct {
 	GoalDiscussionActive      bool                  `json:"goal_discussion_active,omitempty"`       // chat is a task-mode goal discussion: facilitate clarifying the goal into a confirmable task card
 	GoalDiscussionTitle       string                `json:"goal_discussion_title,omitempty"`        // the goal's working title, if any
 	GoalDiscussionGoal        string                `json:"goal_discussion_goal,omitempty"`         // the goal text agreed so far, if any
+	GoalContextTitle          string                `json:"goal_context_title,omitempty"`           // goal-bound chat (any status): the goal/issue title, so follow-up messages carry context
+	GoalContextGoal           string                `json:"goal_context_goal,omitempty"`            // goal-bound chat (any status): the goal text = issue title+description for autofix
 	ChatMessageAttachments    []ChatAttachmentMeta  `json:"chat_message_attachments,omitempty"`     // attachments linked to the chat message; agent uses these to `multica attachment download <id>`
 	AutopilotRunID            string                `json:"autopilot_run_id,omitempty"`             // non-empty for autopilot run_only tasks
 	AutopilotID               string                `json:"autopilot_id,omitempty"`                 // autopilot that spawned this run

@@ -203,12 +203,15 @@
   },
   "new_dialog": {
     "title": "새 채팅",
-    "description": "에이전트와 런타임을 선택하여 채팅 시작",
+    "description": "런타임을 선택해 대화를 시작하세요. 에이전트는 선택 사항입니다.",
     "agent_label": "에이전트",
     "no_agents": "사용 가능한 에이전트가 없습니다",
     "cancel": "취소",
     "creating": "생성 중…",
-    "create": "채팅 시작"
+    "create": "채팅 시작",
+    "agent_optional": "에이전트 (선택)",
+    "agent_none": "다이렉트 채팅",
+    "agent_none_hint": "에이전트 없이 런타임과 바로 대화"
   },
   "no_agent_banner": "채팅을 시작하려면 에이전트가 필요합니다.",
   "offline_banner": {

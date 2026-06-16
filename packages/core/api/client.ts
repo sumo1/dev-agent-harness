@@ -1594,7 +1594,9 @@ export class ApiClient {
   }
 
   async createChatSession(data: {
-    agent_id: string;
+    /** Omit to talk to the workspace's default chat agent (server resolves it).
+     *  When omitted, runtime_id is required. */
+    agent_id?: string;
     title?: string;
     /** Bind the session to this runtime. Omitted → server uses agent default. */
     runtime_id?: string;

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -45,15 +47,34 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
-	}
-	agentID, ok := parseUUIDOrBadRequest(w, req.AgentID, "agent_id")
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
 	if !ok {
 		return
 	}
-	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+
+	// Agentless create: the user picked only a runtime ("just talk to it").
+	// chat_session.agent_id is NOT NULL, so we bind the workspace's managed
+	// default chat agent (empty instructions = plain passthrough), creating it
+	// on first use. A runtime_id is required in this mode — there's no agent
+	// default runtime to fall back to.
+	if req.AgentID == "" {
+		if req.RuntimeID == nil || strings.TrimSpace(*req.RuntimeID) == "" {
+			writeError(w, http.StatusBadRequest, "runtime_id is required when no agent is selected")
+			return
+		}
+		runtimeUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(*req.RuntimeID), "runtime_id")
+		if !ok {
+			return
+		}
+		defaultAgentID, derr := h.resolveOrCreateDefaultChatAgent(r.Context(), workspaceUUID, runtimeUUID, parseUUID(userID))
+		if derr != nil {
+			writeError(w, http.StatusBadRequest, derr.Error())
+			return
+		}
+		req.AgentID = uuidToString(defaultAgentID)
+	}
+
+	agentID, ok := parseUUIDOrBadRequest(w, req.AgentID, "agent_id")
 	if !ok {
 		return
 	}
@@ -115,6 +136,79 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, chatSessionToResponse(session))
+}
+
+// defaultChatAgentName is the fixed, managed name of the per-workspace default
+// chat agent (the "just talk to a runtime" agent). It is intentionally generic
+// and has empty instructions so the runtime behaves as a plain passthrough.
+const defaultChatAgentName = "Chat"
+
+// resolveOrCreateDefaultChatAgent returns the workspace's managed default chat
+// agent, creating it on first use. The id is cached on
+// workspace.default_chat_agent_id (mirrors default_planner_agent_id). The agent
+// has empty instructions — a plain conversational passthrough — and is bound to
+// the given runtime (NOT NULL on agent); the per-session runtime override still
+// lets each session pick its own runtime, so one default agent serves all
+// runtimes. If the cached agent was archived/deleted, a fresh one is created.
+func (h *Handler) resolveOrCreateDefaultChatAgent(
+	ctx context.Context,
+	workspaceID, runtimeID, ownerID pgtype.UUID,
+) (pgtype.UUID, error) {
+	ws, err := h.Queries.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("load workspace: %w", err)
+	}
+
+	// Reuse the cached default agent when it still exists and isn't archived.
+	if ws.DefaultChatAgentID.Valid {
+		if existing, gerr := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID:          ws.DefaultChatAgentID,
+			WorkspaceID: workspaceID,
+		}); gerr == nil && !existing.ArchivedAt.Valid {
+			return existing.ID, nil
+		}
+	}
+
+	// Validate the runtime belongs to this workspace, and inherit its mode so
+	// the created agent is consistent with how the runtime runs.
+	runtime, rerr := h.Queries.GetAgentRuntimeForWorkspace(ctx, db.GetAgentRuntimeForWorkspaceParams{
+		ID:          runtimeID,
+		WorkspaceID: workspaceID,
+	})
+	if rerr != nil {
+		return pgtype.UUID{}, fmt.Errorf("runtime not found in workspace")
+	}
+
+	created, cerr := h.Queries.CreateAgent(ctx, db.CreateAgentParams{
+		WorkspaceID:        workspaceID,
+		Name:               defaultChatAgentName,
+		Description:        "Default conversational agent — talk directly to a runtime.",
+		RuntimeMode:        runtime.RuntimeMode,
+		RuntimeConfig:      []byte("{}"),
+		RuntimeID:          runtimeID,
+		Visibility:         "private",
+		MaxConcurrentTasks: 6,
+		OwnerID:            ownerID,
+		Instructions:       "", // empty = plain passthrough, no persona
+		CustomEnv:          []byte("{}"), // NOT NULL
+		CustomArgs:         []byte("[]"), // NOT NULL
+		McpConfig:          nil,          // nullable
+	})
+	if cerr != nil {
+		return pgtype.UUID{}, fmt.Errorf("create default chat agent: %w", cerr)
+	}
+
+	// Cache the id on the workspace (best-effort; a failure just means the next
+	// agentless create re-resolves — it will find this agent by id is not
+	// possible without the cache, so we'd create a duplicate. Log + continue).
+	if _, uerr := h.Queries.SetWorkspaceDefaultChatAgent(ctx, db.SetWorkspaceDefaultChatAgentParams{
+		ID:                 workspaceID,
+		DefaultChatAgentID: created.ID,
+	}); uerr != nil {
+		slog.Error("failed to cache default chat agent id", "workspace_id", uuidToString(workspaceID), "error", uerr)
+	}
+
+	return created.ID, nil
 }
 
 func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {

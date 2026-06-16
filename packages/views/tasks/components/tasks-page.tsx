@@ -414,11 +414,16 @@ function WorkingDirPicker({
   const wsId = useWorkspaceId();
   const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const { setProject } = useTaskActions();
+  // Control open state so selecting an item closes the popover. Without this the
+  // Base UI popover stays open after a click, and its portal/positioner overlay
+  // sits over the header — making sibling controls (the Members "+", Cancel)
+  // feel dead because clicks land on the stale popover layer.
+  const [open, setOpen] = useState(false);
 
   const bound = projects.find((p) => p.id === goal.project_id);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={<Button variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs" />}
       >
@@ -445,13 +450,14 @@ function WorkingDirPicker({
                   key={p.id}
                   type="button"
                   disabled={setProject.isPending}
-                  onClick={() =>
+                  onClick={() => {
                     setProject.mutate({
                       taskId: goal.id,
                       // Clicking the bound one again clears the binding.
                       projectId: isBound ? "" : p.id,
-                    })
-                  }
+                    });
+                    setOpen(false);
+                  }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60 disabled:opacity-60",
                   )}

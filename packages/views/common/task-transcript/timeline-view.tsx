@@ -172,7 +172,7 @@ function ToolCallRow({ item }: { item: TimelineItem }) {
           )}
         />
         <span className="font-medium text-foreground shrink-0">{item.tool}</span>
-        {summary && <span className="truncate text-muted-foreground">{summary}</span>}
+        {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
       </CollapsibleTrigger>
       {hasInput && (
         <CollapsibleContent>
@@ -205,7 +205,7 @@ function ToolResultRow({ item }: { item: TimelineItem }) {
             open && "rotate-90",
           )}
         />
-        <span className="text-muted-foreground/70 truncate">
+        <span className="min-w-0 truncate text-muted-foreground/70">
           {labelPrefix}
           {preview}
         </span>

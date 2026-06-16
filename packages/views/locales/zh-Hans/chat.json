@@ -200,12 +200,15 @@
   },
   "new_dialog": {
     "title": "新建对话",
-    "description": "选择一个智能体和运行时来开始对话",
+    "description": "选择一个运行时开始对话，智能体可选。",
     "agent_label": "智能体",
     "no_agents": "暂无可用的智能体",
     "cancel": "取消",
     "creating": "创建中…",
-    "create": "开始对话"
+    "create": "开始对话",
+    "agent_optional": "智能体（可选）",
+    "agent_none": "直接对话",
+    "agent_none_hint": "不绑定智能体——直接与运行时对话"
   },
   "no_agent_banner": "需要先有一个智能体才能开始对话。",
   "offline_banner": {

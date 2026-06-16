@@ -244,6 +244,8 @@ type AgentTaskResponse struct {
 	GoalDiscussionActive      bool                 `json:"goal_discussion_active,omitempty"`       // chat session is a task-mode goal discussion (status=discussion): facilitate goal clarification
 	GoalDiscussionTitle       string               `json:"goal_discussion_title,omitempty"`        // the goal's working title, if any
 	GoalDiscussionGoal        string               `json:"goal_discussion_goal,omitempty"`         // the goal text agreed so far, if any
+	GoalContextTitle          string               `json:"goal_context_title,omitempty"`           // goal-bound chat (any status): the goal/issue title, so follow-up messages carry context
+	GoalContextGoal           string               `json:"goal_context_goal,omitempty"`            // goal-bound chat (any status): the goal text = issue title+description for autofix
 	TakeoverSubtaskTitle      string               `json:"takeover_subtask_title,omitempty"`       // chat session is a goal-subtask takeover: the subtask title
 	TakeoverSubtaskSpec       string               `json:"takeover_subtask_spec,omitempty"`        // the subtask spec the agent was working on
 	TakeoverFailureReason     string               `json:"takeover_failure_reason,omitempty"`      // why the subtask failed, for takeover context

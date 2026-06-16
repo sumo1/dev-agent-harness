@@ -49,8 +49,12 @@
       "reason_prefix": "上次结果：",
       "start": "启动修复",
       "start_sent": "已启动自动修复",
-      "start_failed": "启动修复失败"
-    }
+      "start_failed": "启动修复失败",
+      "start_need_both": "请先在上方绑定工作目录并指派一个 agent，再启动修复。",
+      "start_need_project": "请先在上方绑定工作目录，再启动修复。",
+      "start_need_agent": "请先在上方指派一个 agent 或小队，再启动修复。"
+    },
+    "execution": "执行"
   },
   "status": {
     "backlog": "待规划",

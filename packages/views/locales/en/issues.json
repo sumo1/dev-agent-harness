@@ -49,8 +49,12 @@
       "reason_prefix": " Last result:",
       "start": "Start fix",
       "start_sent": "Auto-fix started",
-      "start_failed": "Couldn't start the fix"
-    }
+      "start_failed": "Couldn't start the fix",
+      "start_need_both": "Bind a working directory and assign an agent (above) to start the fix.",
+      "start_need_project": "Bind a working directory (above) to start the fix.",
+      "start_need_agent": "Assign an agent or squad (above) to start the fix."
+    },
+    "execution": "Execution"
   },
   "status": {
     "backlog": "Backlog",

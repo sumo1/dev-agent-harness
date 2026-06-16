@@ -200,12 +200,15 @@
   },
   "new_dialog": {
     "title": "新しいチャット",
-    "description": "エージェントとランタイムを選んでチャットを開始",
+    "description": "ランタイムを選んでチャットを開始します。エージェントは任意です。",
     "agent_label": "エージェント",
     "no_agents": "利用可能なエージェントがありません",
     "cancel": "キャンセル",
     "creating": "作成中…",
-    "create": "チャットを開始"
+    "create": "チャットを開始",
+    "agent_optional": "エージェント（任意）",
+    "agent_none": "ダイレクトチャット",
+    "agent_none_hint": "エージェントなし — ランタイムと直接対話"
   },
   "no_agent_banner": "チャットを始めるにはエージェントが必要です。",
   "offline_banner": {

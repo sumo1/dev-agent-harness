@@ -49,8 +49,12 @@
       "reason_prefix": "지난 결과:",
       "start": "수정 시작",
       "start_sent": "자동 수정을 시작했습니다",
-      "start_failed": "수정을 시작하지 못했습니다"
-    }
+      "start_failed": "수정을 시작하지 못했습니다",
+      "start_need_both": "위에서 작업 디렉터리를 연결하고 에이전트를 지정한 뒤 수정을 시작하세요.",
+      "start_need_project": "위에서 작업 디렉터리를 연결한 뒤 수정을 시작하세요.",
+      "start_need_agent": "위에서 에이전트 또는 스쿼드를 지정한 뒤 수정을 시작하세요."
+    },
+    "execution": "실행"
   },
   "status": {
     "backlog": "백로그",

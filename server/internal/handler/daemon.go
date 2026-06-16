@@ -1400,17 +1400,31 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Discussion chat: when this session drives a task-mode goal that is
-			// still in the 'discussion' phase, tell the chat prompt to act as the
-			// 总控 facilitator — guide the user to clarify the goal into a
-			// confirmable task card, rather than just answering. Once the goal
-			// leaves 'discussion' (confirmed → planning), this no longer fires and
-			// the chat reverts to a normal post-confirmation conversation.
+			// Goal-bound chat: this session drives a task-mode / autofix goal_run.
+			// ALWAYS surface the goal's title + text (which for autofix is the
+			// issue title + description) so a follow-up message — e.g. an issue
+			// quick-action "retry the fix" sent AFTER planning — carries the
+			// issue context. Without this the agent only sees the bare message
+			// ("fix this problem") and goes hunting for which issue it means.
+			// The 'discussion'-only facilitation framing is layered on top.
 			if cs.GoalRunID.Valid {
-				if run, err := h.Queries.GetGoalRun(r.Context(), cs.GoalRunID); err == nil && run.Status == "discussion" {
-					resp.GoalDiscussionActive = true
-					resp.GoalDiscussionTitle = run.Title
-					resp.GoalDiscussionGoal = run.Goal
+				if run, err := h.Queries.GetGoalRun(r.Context(), cs.GoalRunID); err == nil {
+					resp.GoalContextTitle = run.Title
+					resp.GoalContextGoal = run.Goal
+					if run.Status == "discussion" {
+						resp.GoalDiscussionActive = true
+						resp.GoalDiscussionTitle = run.Title
+						resp.GoalDiscussionGoal = run.Goal
+					}
+					// Surface the bound project the SAME way planning/subtask/persist
+					// claims do: this (a) puts the repo/working-dir in the prompt and
+					// (b) makes the daemon run the agent INSIDE the project's
+					// local_directory. Without it a discussion chat bound to a working
+					// dir runs in an empty cwd → the agent says "no repo checked out,
+					// which project do you mean?" even though the user picked one.
+					if run.ProjectID.Valid {
+						h.attachProjectContext(r.Context(), &resp, uuidToString(run.ProjectID))
+					}
 				}
 			}
 		}

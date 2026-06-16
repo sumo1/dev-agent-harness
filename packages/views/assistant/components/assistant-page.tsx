@@ -19,9 +19,18 @@ import { ChatInput } from "../../chat/components/chat-input";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import { SessionList } from "./session-list";
 import { NewSessionDialog } from "./new-session-dialog";
+import { GoalStatusTree } from "./goal-status-tree";
+import { TaskStream } from "../../tasks/components/task-stream";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@multica/ui/components/ui/popover";
+import { Button } from "@multica/ui/components/ui/button";
+import { ListTree, ChevronDown } from "lucide-react";
 import { useT } from "../../i18n";
 import { createLogger } from "@multica/core/logger";
-import type { ChatMessage } from "@multica/core/types";
+import type { ChatMessage, GoalRun, GoalSubtask } from "@multica/core/types";
 
 const logger = createLogger("assistant.page");
 
@@ -94,6 +103,21 @@ export function AssistantPage() {
   // 当前会话对应的 agent
   const currentSession = sessions.find((s) => s.id === activeSessionId);
   const currentAgent = agents.find((a) => a.id === currentSession?.agent_id);
+
+  // Goal-run execution view: when the active session IS the located goal_run's
+  // discussion session (the issue → "open assistant session" jump), surface the
+  // planning + subtask execution streams alongside the chat — otherwise an
+  // autofix issue's output was invisible here. Read-only (no intervention); the
+  // tasks page remains the place to act on a goal.
+  const goalForSession =
+    locatorGoalRun && locatorGoalRun.chat_session_id === activeSessionId
+      ? locatorGoalRun
+      : null;
+  const [activeSubtaskId, setActiveSubtaskId] = useState<string | null>(null);
+  const resolveAgentName = useCallback(
+    (id: string) => agents.find((a) => a.id === id)?.name,
+    [agents],
+  );
 
   // Agent 可用性状态
   const presenceDetail = useAgentPresenceDetail(wsId, currentAgent?.id);
@@ -204,13 +228,61 @@ export function AssistantPage() {
       <div className="flex-1 min-h-0 flex flex-col border-l">
         {activeSessionId ? (
           <>
-            {/* 消息列表 - 复用现有组件 */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <ChatMessageList
-                messages={messages}
-                pendingTask={pendingTask}
-                availability={availability}
+            {/* Goal-run execution header: status tree + subtask switcher. Only
+                for a session bound to a located goal_run (autofix / task jump). */}
+            {goalForSession && (
+              <GoalExecutionHeader
+                goal={goalForSession}
+                resolveAgentName={resolveAgentName}
+                activeSubtaskId={activeSubtaskId}
+                onSelectMain={() => setActiveSubtaskId(null)}
+                onSelectSubtask={setActiveSubtaskId}
               />
+            )}
+
+            {/* 消息列表 - 复用现有组件。A selected subtask shows its own stream;
+                otherwise the chat, with the planning/summary streams interleaved
+                at the confirm gate (same model as the tasks page). This wrapper
+                MUST be a flex column: ChatMessageList's scroll root is
+                `flex-1 overflow-y-auto`, which only gets a bounded height (→ can
+                scroll) when its parent is a flex column with min-h-0. A plain
+                block here kills the scroll. */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {goalForSession && activeSubtaskId ? (
+                <SubtaskStreamView
+                  goal={goalForSession}
+                  subtaskId={activeSubtaskId}
+                />
+              ) : (
+                <ChatMessageList
+                  messages={messages}
+                  pendingTask={pendingTask}
+                  availability={availability}
+                  timelineInsert={
+                    goalForSession?.planning_task_id
+                      ? {
+                          afterTs: goalForSession.confirmed_at,
+                          content: (
+                            <div className="space-y-3 border-y py-3">
+                              <TaskStream
+                                taskId={goalForSession.planning_task_id}
+                                running={goalForSession.status === "planning"}
+                                emptyHint={t(($) => $.task_page.planning_hint)}
+                              />
+                              {goalForSession.summary_task_id && (
+                                <TaskStream
+                                  taskId={goalForSession.summary_task_id}
+                                  running={goalForSession.status === "executing"}
+                                  emptyHint={t(($) => $.task_page.summarizing)}
+                                />
+                              )}
+                            </div>
+                          ),
+                        }
+                      : undefined
+                  }
+                />
+              )}
             </div>
 
             {/* 输入区域 - 复用现有组件 */}
@@ -249,6 +321,84 @@ export function AssistantPage() {
         currentUserId={user?.id ?? null}
         onCreateSession={handleCreateSession}
       />
+    </div>
+  );
+}
+
+/** Header bar for a goal-run-backed session: a progress chip that opens the
+ *  status tree (reused from the tasks page). Read-only here — no intervention
+ *  handlers — so the assistant stays a viewer; act on the goal from the tasks
+ *  page. Clicking a subtask switches the content below to its execution stream. */
+function GoalExecutionHeader({
+  goal,
+  resolveAgentName,
+  activeSubtaskId,
+  onSelectMain,
+  onSelectSubtask,
+}: {
+  goal: GoalRun;
+  resolveAgentName: (id: string) => string | undefined;
+  activeSubtaskId: string | null;
+  onSelectMain: () => void;
+  onSelectSubtask: (id: string) => void;
+}) {
+  const { t } = useT("chat");
+  const total = goal.subtasks.length;
+  const done = goal.subtasks.filter((s) => s.status === "completed").length;
+
+  return (
+    <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+      <span className="truncate text-xs text-muted-foreground">{goal.title || goal.goal}</span>
+      <Popover>
+        <PopoverTrigger
+          render={<Button variant="outline" size="sm" className="h-7 shrink-0 gap-1.5 text-xs" />}
+        >
+          <ListTree className="h-3.5 w-3.5" />
+          {t(($) => $.task_page.status_tree)}
+          {total > 0 && (
+            <span className="font-mono tabular-nums text-muted-foreground/70">
+              {done}/{total}
+            </span>
+          )}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </PopoverTrigger>
+        <PopoverContent align="end" className="max-h-[70vh] w-[360px] overflow-y-auto p-0">
+          <GoalStatusTree
+            goal={goal}
+            resolveAgentName={resolveAgentName}
+            selectedSubtaskId={activeSubtaskId}
+            onSelectMain={onSelectMain}
+            onSelectSubtask={onSelectSubtask}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+/** Read-only execution stream for one subtask (title + spec + transcript). */
+function SubtaskStreamView({ goal, subtaskId }: { goal: GoalRun; subtaskId: string }) {
+  const { t } = useT("chat");
+  const subtask: GoalSubtask | undefined = goal.subtasks.find((s) => s.id === subtaskId);
+  if (!subtask) return null;
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
+      <div className="border-b pb-2">
+        <h4 className="mb-1 font-medium text-foreground">{subtask.title}</h4>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{subtask.spec}</p>
+      </div>
+      {subtask.failure_reason && (
+        <div className="mt-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+          {subtask.failure_reason}
+        </div>
+      )}
+      <div className="mt-3">
+        {subtask.task_id ? (
+          <TaskStream taskId={subtask.task_id} running={subtask.status === "running"} />
+        ) : (
+          <p className="text-xs text-muted-foreground">{t(($) => $.task_page.planning_hint)}</p>
+        )}
+      </div>
     </div>
   );
 }

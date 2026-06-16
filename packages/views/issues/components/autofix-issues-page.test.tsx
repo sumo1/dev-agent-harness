@@ -107,7 +107,41 @@ const startAutofixMock = vi.hoisted(() =>
   vi.fn(() => Promise.resolve({ goal_run_id: "g-new" })),
 );
 vi.mock("@multica/core/api", () => ({
-  api: { sendChatMessage: sendChatMessageMock, startAutofix: startAutofixMock },
+  api: {
+    sendChatMessage: sendChatMessageMock,
+    startAutofix: startAutofixMock,
+    cancelTaskById: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+// The embedded conversation (closed-loop issue detail) pulls chat messages +
+// pending task + the agent list. Stub the queries to empty; the heavy chat /
+// stream / status-tree components are stubbed to lightweight markers — the page
+// test asserts WIRING (banner, quick actions, jump), not their internals.
+vi.mock("@multica/core/chat/queries", () => ({
+  chatMessagesOptions: (sessionId: string) => ({
+    queryKey: ["chat", "messages", sessionId],
+    queryFn: () => Promise.resolve([]),
+  }),
+  pendingChatTaskOptions: (sessionId: string) => ({
+    queryKey: ["chat", "pending", sessionId],
+    queryFn: () => Promise.resolve(null),
+  }),
+}));
+vi.mock("@multica/core/workspace/queries", () => ({
+  agentListOptions: () => ({ queryKey: ["agents", "ws-1"], queryFn: () => Promise.resolve([]) }),
+}));
+vi.mock("../../chat/components/chat-message-list", () => ({
+  ChatMessageList: () => <div data-testid="chat-message-list" />,
+}));
+vi.mock("../../chat/components/chat-input", () => ({
+  ChatInput: () => <div data-testid="chat-input" />,
+}));
+vi.mock("../../tasks/components/task-stream", () => ({
+  TaskStream: () => <div data-testid="task-stream" />,
+}));
+vi.mock("../../assistant/components/goal-status-tree", () => ({
+  GoalStatusTree: () => <div data-testid="goal-status-tree" />,
 }));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -296,7 +330,7 @@ describe("AutofixIssuesPage", () => {
         } as never,
       }),
     ];
-    fixtures.goalRun = { status: "completed" };
+    fixtures.goalRun = { status: "completed", chat_session_id: "cs-1", subtasks: [] };
     renderPage();
 
     fireEvent.click(await screen.findByText(/Has PR/));
@@ -318,6 +352,8 @@ describe("AutofixIssuesPage", () => {
         } as never,
       }),
     ];
+    // The jump button only renders once the run has a discussion session.
+    fixtures.goalRun = { status: "running", chat_session_id: "g1-cs", subtasks: [] };
     renderPage();
 
     fireEvent.click(await screen.findByText(/Has run/));
@@ -326,15 +362,16 @@ describe("AutofixIssuesPage", () => {
     expect(mockPush).toHaveBeenCalledWith("/ws-slug/assistant?goal_run_id=g1");
   });
 
-  it("jump-to-assistant button is disabled when there is no goal_run yet", async () => {
+  it("jump-to-assistant button is hidden when there is no goal_run session yet", async () => {
     fixtures.issues = [
       issue({ id: "i1", number: 1, identifier: "TES-1", title: "No run" }),
     ];
+    fixtures.goalRun = null;
     renderPage();
 
     fireEvent.click(await screen.findByText(/No run/));
-    const btn = await screen.findByText("Open assistant session");
-    expect(btn.closest("button")).toBeDisabled();
+    // No run/session → the detail shows the static description, no jump button.
+    expect(screen.queryByText("Open assistant session")).not.toBeInTheDocument();
   });
 
   it("failed goal_run renders the 执行错误/failed banner (not 'in progress')", async () => {
@@ -408,7 +445,7 @@ describe("AutofixIssuesPage", () => {
         } as never,
       }),
     ];
-    fixtures.goalRun = { status: "running", chat_session_id: "cs-1" };
+    fixtures.goalRun = { status: "running", chat_session_id: "cs-1", subtasks: [] };
     renderPage();
 
     fireEvent.click(await screen.findByText(/Fix me/));
@@ -427,7 +464,7 @@ describe("AutofixIssuesPage", () => {
     );
   });
 
-  it("quick actions are disabled (hint shown) when the run has no chat session", async () => {
+  it("no chat session → only Start fix is offered (no retry/complete actions yet)", async () => {
     fixtures.issues = [
       issue({
         id: "i1",
@@ -443,9 +480,8 @@ describe("AutofixIssuesPage", () => {
     renderPage();
 
     fireEvent.click(await screen.findByText(/No session/));
-    expect(
-      await screen.findByText(/Assign an agent and bind a working directory/),
-    ).toBeInTheDocument();
+    // Start fix is always available; the in-flight actions appear only after a run.
+    expect(await screen.findByText("Start fix")).toBeInTheDocument();
     expect(screen.queryByText("Complete issue")).not.toBeInTheDocument();
   });
 
@@ -471,7 +507,7 @@ describe("AutofixIssuesPage", () => {
     await waitFor(() => expect(startAutofixMock).toHaveBeenCalledWith("i1"));
   });
 
-  it("not_started + NOT eligible (no project/agent) shows the hint, no Start fix", async () => {
+  it("not_started + NOT eligible: Start fix still shows; clicking guides to bind project+agent (no fire)", async () => {
     fixtures.issues = [
       issue({ id: "i1", number: 1, identifier: "TES-1", title: "Bare" }),
     ];
@@ -479,10 +515,14 @@ describe("AutofixIssuesPage", () => {
     renderPage();
 
     fireEvent.click(await screen.findByText(/Bare/));
+    // The button is ALWAYS shown now — it must not silently disappear.
+    const startBtn = await screen.findByText("Start fix");
+    // Clicking while ineligible reveals the guide and does NOT call startAutofix.
+    fireEvent.click(startBtn);
     expect(
-      await screen.findByText(/Assign an agent and bind a working directory/),
+      await screen.findByText(/Bind a working directory and assign an agent/),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Start fix")).not.toBeInTheDocument();
+    expect(startAutofixMock).not.toHaveBeenCalled();
   });
 
   it("paste routes the file through the upload path", async () => {

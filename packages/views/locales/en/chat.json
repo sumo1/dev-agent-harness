@@ -203,12 +203,15 @@
   },
   "new_dialog": {
     "title": "New chat",
-    "description": "Pick an agent and runtime to start chatting",
+    "description": "Pick a runtime to start chatting. Optionally choose an agent.",
     "agent_label": "Agent",
     "no_agents": "No agents available",
     "cancel": "Cancel",
     "creating": "Creating…",
-    "create": "Start chat"
+    "create": "Start chat",
+    "agent_optional": "Agent (optional)",
+    "agent_none": "Direct chat",
+    "agent_none_hint": "No agent — talk straight to the runtime"
   },
   "no_agent_banner": "You need an agent to start chatting.",
   "offline_banner": {

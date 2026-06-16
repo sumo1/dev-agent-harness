@@ -697,6 +697,7 @@ type Workspace struct {
 	IssueCounter          int32              `json:"issue_counter"`
 	AvatarUrl             pgtype.Text        `json:"avatar_url"`
 	DefaultPlannerAgentID pgtype.UUID        `json:"default_planner_agent_id"`
+	DefaultChatAgentID    pgtype.UUID        `json:"default_chat_agent_id"`
 }
 
 type WorkspaceInvitation struct {
