@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -210,7 +212,8 @@ func (h *Handler) buildPlanningRoster(ctx context.Context, squad db.Squad, proje
 		if inSquad[util.UUIDToString(ag.ID)] {
 			continue
 		}
-		row := formatRosterRowWithDesc(ag.Name, "agent", "", formatMention(ag.Name, "agent", util.UUIDToString(ag.ID)), ag.Description)
+		provider := agentProviderTag(ctx, h.Queries, ag.RuntimeID)
+		row := formatRosterRowWithDesc(ag.Name, "agent", "", formatMention(ag.Name, "agent", util.UUIDToString(ag.ID)), provider, ag.Description)
 		// Prefer the project's own roles: flag them so the planner picks them
 		// first, and front-load them in the list.
 		if projectRoles[ag.Name] {
@@ -248,7 +251,8 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.SquadMember) strin
 		if ag.ArchivedAt.Valid {
 			return ""
 		}
-		return formatRosterRowWithDesc(ag.Name, "agent", role, formatMention(ag.Name, "agent", id), ag.Description)
+		provider := agentProviderTag(ctx, q, ag.RuntimeID)
+		return formatRosterRowWithDesc(ag.Name, "agent", role, formatMention(ag.Name, "agent", id), provider, ag.Description)
 	case "member":
 		user, err := q.GetUser(ctx, m.MemberID)
 		if err != nil {
@@ -264,14 +268,17 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.SquadMember) strin
 }
 
 func formatRosterRow(name, kind, role, mention string) string {
-	return formatRosterRowWithDesc(name, kind, role, mention, "")
+	return formatRosterRowWithDesc(name, kind, role, mention, "", "")
 }
 
-// formatRosterRowWithDesc is formatRosterRow plus the agent's description (its
-// specialty), so a planner can match a node to a role by what the role actually
-// does — not just guess from its name. The description is truncated to its first
-// paragraph / ~200 runes to keep the roster compact.
-func formatRosterRowWithDesc(name, kind, role, mention, desc string) string {
+// formatRosterRowWithDesc is formatRosterRow plus the agent's runtime provider
+// (its model/engine family, e.g. claude / gemini / codex) and description (its
+// specialty). The provider lets a planner pick a verify node on a DIFFERENT
+// model than the work it reviews (real cross-model validation); the description
+// lets it match a node to a role by what the role actually does — not just guess
+// from its name. The description is truncated to its first paragraph / ~200 runes
+// to keep the roster compact. An empty provider/desc omits that trailer.
+func formatRosterRowWithDesc(name, kind, role, mention, provider, desc string) string {
 	var sb strings.Builder
 	sb.WriteString("- ")
 	sb.WriteString(name)
@@ -285,12 +292,32 @@ func formatRosterRowWithDesc(name, kind, role, mention, desc string) string {
 	sb.WriteString(" — `")
 	sb.WriteString(mention)
 	sb.WriteString("`")
+	if p := strings.TrimSpace(provider); p != "" {
+		sb.WriteString(" — model: ")
+		sb.WriteString(p)
+	}
 	if d := truncateRoleDesc(desc); d != "" {
 		sb.WriteString(" — ")
 		sb.WriteString(d)
 	}
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+// agentProviderTag returns the runtime provider (model/engine family) for an
+// agent, e.g. "claude" / "gemini" / "codex" — the signal a planner uses to give
+// a verify node a different model than the node it reviews. Returns "" when the
+// runtime can't be resolved (the roster row then simply omits the model tag
+// rather than failing the whole plan).
+func agentProviderTag(ctx context.Context, q *db.Queries, runtimeID pgtype.UUID) string {
+	if !runtimeID.Valid {
+		return ""
+	}
+	rt, err := q.GetAgentRuntime(ctx, runtimeID)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(rt.Provider)
 }
 
 // truncateRoleDesc reduces a role description to a single compact line for the

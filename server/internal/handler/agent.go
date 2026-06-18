@@ -224,6 +224,7 @@ type AgentTaskResponse struct {
 	GoalUpstreamOutput        string               `json:"goal_upstream_output,omitempty"`         // for execute nodes with deps: the OUTPUT of upstream node(s)
 	GoalHandoffBrief          string               `json:"goal_handoff_brief,omitempty"`           // frames upstream output as direct runtime input, not a file handoff
 	GoalAutofix               bool                 `json:"goal_autofix,omitempty"`                 // true for issue auto-fix subtasks: surface the `multica goal report` artifact channel
+	GoalRerunFeedback         string               `json:"goal_rerun_feedback,omitempty"`          // reviewer's reject reason on a re-run, so the agent addresses specific points
 	GoalPlanningRunID         string               `json:"goal_planning_run_id,omitempty"`         // non-empty for goal-planning tasks (PMO decomposes)
 	GoalPlanningGoal          string               `json:"goal_planning_goal,omitempty"`           // the goal text the leader must decompose
 	GoalPlanningAutofix       bool                 `json:"goal_planning_autofix,omitempty"`        // true for issue auto-fix planning (fixed 4-node DAG)
@@ -236,11 +237,15 @@ type AgentTaskResponse struct {
 	GoalPersistSlug           string               `json:"goal_persist_slug,omitempty"`            // docs/task/{slug} directory name to write under
 	GoalPersistOutcome        string               `json:"goal_persist_outcome,omitempty"`         // goal_run status snapshot at persist time
 	GoalPersistDigest         string               `json:"goal_persist_digest,omitempty"`          // assembled subtask content to author into harness files
-	GoalDecisionSubtaskID     string               `json:"goal_decision_subtask_id,omitempty"`     // non-empty for goal-decision tasks (总控 judges a failed node)
-	GoalDecisionSubtaskTitle  string               `json:"goal_decision_subtask_title,omitempty"`  // the failed node's title
-	GoalDecisionSubtaskSpec   string               `json:"goal_decision_subtask_spec,omitempty"`   // the failed node's spec
+	GoalDecisionSubtaskID     string               `json:"goal_decision_subtask_id,omitempty"`     // non-empty for goal-decision tasks (总控 judges a node)
+	GoalDecisionSubtaskTitle  string               `json:"goal_decision_subtask_title,omitempty"`  // the judged node's title
+	GoalDecisionSubtaskSpec   string               `json:"goal_decision_subtask_spec,omitempty"`   // the judged node's spec
 	GoalDecisionFailureReason string               `json:"goal_decision_failure_reason,omitempty"` // why the node failed
-	GoalDecisionDownstream    string               `json:"goal_decision_downstream,omitempty"`     // dependents blocked behind the failed node
+	GoalDecisionDownstream    string               `json:"goal_decision_downstream,omitempty"`     // dependents blocked behind the judged node
+	GoalDecisionTrigger       string               `json:"goal_decision_trigger,omitempty"`        // "failure" or "reject"
+	GoalDecisionRejectReason  string               `json:"goal_decision_reject_reason,omitempty"`  // verifier's reason when trigger=="reject"
+	GoalDecisionAttempts      int32                `json:"goal_decision_attempts,omitempty"`       // attempts already made on the judged node
+	GoalDecisionDagSnapshot   string               `json:"goal_decision_dag_snapshot,omitempty"`   // global view of every node's state
 	GoalDiscussionActive      bool                 `json:"goal_discussion_active,omitempty"`       // chat session is a task-mode goal discussion (status=discussion): facilitate goal clarification
 	GoalDiscussionTitle       string               `json:"goal_discussion_title,omitempty"`        // the goal's working title, if any
 	GoalDiscussionGoal        string               `json:"goal_discussion_goal,omitempty"`         // the goal text agreed so far, if any

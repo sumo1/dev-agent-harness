@@ -273,6 +273,13 @@ WHERE atq.id = $1 AND a.workspace_id = $2;
 -- "any other quick-create-shaped task" (all four FKs NULL) for the same agent —
 -- otherwise a user mashing the create button could fire concurrent quick-creates
 -- whose completion lookup would race over "most recent issue by this agent".
+-- Goal subtasks ALSO carry none of issue/chat/autopilot, but they are
+-- independent DAG nodes meant to run in parallel — even when several land on
+-- the SAME coder agent. They are kept OUT of the quick-create-shape bucket by
+-- requiring goal_subtask_id IS NULL on both sides, so one agent can execute
+-- multiple independent subtasks concurrently (no shared issue / "most recent
+-- issue" lookup to race over; each subtask reports back via its own
+-- goal_subtask_id).
 UPDATE agent_task_queue
 SET status = 'dispatched', dispatched_at = now()
 WHERE id = (
@@ -289,9 +296,11 @@ WHERE id = (
                 atq.issue_id IS NULL
                 AND atq.chat_session_id IS NULL
                 AND atq.autopilot_run_id IS NULL
+                AND atq.goal_subtask_id IS NULL
                 AND active.issue_id IS NULL
                 AND active.chat_session_id IS NULL
                 AND active.autopilot_run_id IS NULL
+                AND active.goal_subtask_id IS NULL
               )
             )
       )
@@ -389,6 +398,28 @@ RETURNING *;
 -- never picks up a bad session even when failure_reason hasn't caught up.
 SELECT session_id, work_dir, runtime_id FROM agent_task_queue
 WHERE agent_id = $1 AND issue_id = $2
+  AND (
+    status = 'completed'
+    OR (
+      status = 'failed'
+      AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
+      AND NOT (COALESCE(error, '') ILIKE '%400%' AND COALESCE(error, '') ILIKE '%invalid_request_error%')
+    )
+  )
+  AND session_id IS NOT NULL
+ORDER BY COALESCE(completed_at, started_at, dispatched_at, created_at) DESC
+LIMIT 1;
+
+-- name: GetLastSubtaskTaskSession :one
+-- The goal-subtask analog of GetLastTaskSession: returns the session_id +
+-- work_dir + runtime_id of the most recent task for a given goal_subtask_id, so
+-- when a coordinator decides to retry/reshape a node the agent RESUMES its prior
+-- Claude Code conversation (and workdir) instead of starting from scratch — the
+-- "断点续跑" path. Goal subtasks carry no issue/chat FK, so resume must key on
+-- goal_subtask_id. Same poisoned-session filtering as GetLastTaskSession so a
+-- retry never inherits an unprocessable conversation.
+SELECT session_id, work_dir, runtime_id FROM agent_task_queue
+WHERE goal_subtask_id = $1
   AND (
     status = 'completed'
     OR (

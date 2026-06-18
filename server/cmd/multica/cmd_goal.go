@@ -147,11 +147,12 @@ func runGoalVerdict(cmd *cobra.Command, args []string) error {
 // and reports how to proceed. 'reshape' rewrites the node's spec then retries it.
 
 var goalDecideCmd = &cobra.Command{
-	Use:   "decide <subtask-id> <proceed|reshape|abort>",
-	Short: "Report a coordinator's next-step judgment on a failed subtask",
-	Long: "Report how to proceed past a failed subtask. 'proceed' skips it and " +
-		"unblocks downstream; 'reshape' rewrites its spec (via --spec) and retries " +
-		"it; 'abort' blocks the downstream branch.",
+	Use:   "decide <subtask-id> <retry|reshape|proceed|abort>",
+	Short: "Report a coordinator's next-step judgment on a failed/rejected subtask",
+	Long: "Report how to proceed past a failed node OR a rejected review. 'retry' " +
+		"re-runs the work as-is with a fresh attempt; 'reshape' rewrites its spec " +
+		"(via --spec) and re-runs; 'proceed' accepts/skips it and unblocks " +
+		"downstream; 'abort' blocks the downstream branch.",
 	Args: cobra.ExactArgs(2),
 	RunE: runGoalDecide,
 }
@@ -163,9 +164,9 @@ func runGoalDecide(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("subtask id is required")
 	}
 	switch decision {
-	case "proceed", "reshape", "abort":
+	case "retry", "proceed", "reshape", "abort":
 	default:
-		return fmt.Errorf("decision must be 'proceed', 'reshape', or 'abort'")
+		return fmt.Errorf("decision must be 'retry', 'reshape', 'proceed', or 'abort'")
 	}
 	spec, _ := cmd.Flags().GetString("spec")
 

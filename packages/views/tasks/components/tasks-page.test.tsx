@@ -125,6 +125,41 @@ describe("TasksPage", () => {
     });
   });
 
+  it("shows a not-found state when a selected task fails to load (deleted out from under a stale list)", async () => {
+    mockListTasks.mockResolvedValue([
+      {
+        id: "goal-gone",
+        workspace_id: "ws-1",
+        squad_id: "sq-1",
+        chat_session_id: "",
+        title: "Ghost task",
+        goal: "",
+        status: "completed",
+        subtasks: [],
+        created_at: "",
+        updated_at: "",
+      },
+    ]);
+    // The goal was deleted: fetching it 404s (getGoal throws).
+    mockGetGoal.mockRejectedValue(new Error("API error: 404 Not Found"));
+
+    renderPage();
+    const row = await screen.findByText("Ghost task");
+    await userEvent.click(row);
+
+    // The detail panel must surface an explicit not-found state, NOT the same
+    // blank "pick a task" empty state (which would look like a dead click).
+    expect(
+      await screen.findByText("This task couldn't be loaded — it may have been deleted."),
+    ).toBeInTheDocument();
+
+    // "Back to list" clears the selection → back to the empty state.
+    await userEvent.click(screen.getByRole("button", { name: "Back to list" }));
+    expect(
+      await screen.findByText("Create a task or pick one from the list."),
+    ).toBeInTheDocument();
+  });
+
   it("lists existing tasks with a localized status", async () => {
     mockListTasks.mockResolvedValue([
       {

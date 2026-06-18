@@ -84,6 +84,7 @@ type Task struct {
 	GoalUpstreamOutput        string                `json:"goal_upstream_output,omitempty"`         // for execute nodes with deps: the OUTPUT of upstream node(s), so it builds on it instead of re-deriving
 	GoalHandoffBrief          string                `json:"goal_handoff_brief,omitempty"`           // frames upstream output as direct runtime input, not a file handoff
 	GoalAutofix               bool                  `json:"goal_autofix,omitempty"`                 // true for issue auto-fix subtasks: surface the `multica goal report` artifact channel
+	GoalRerunFeedback         string                `json:"goal_rerun_feedback,omitempty"`          // incremental instruction on a re-run (reviewer's reject reason), so a session-resumed agent fixes specific points
 	GoalPlanningRunID         string                `json:"goal_planning_run_id,omitempty"`         // non-empty for goal-planning tasks (PMO decomposes the goal)
 	GoalPlanningGoal          string                `json:"goal_planning_goal,omitempty"`           // the goal text the leader must decompose
 	GoalPlanningAutofix       bool                  `json:"goal_planning_autofix,omitempty"`        // true for issue auto-fix planning: steer the PMO to the fixed 4-node DAG
@@ -96,11 +97,15 @@ type Task struct {
 	GoalPersistSlug           string                `json:"goal_persist_slug,omitempty"`            // docs/task/{slug} directory name to write under
 	GoalPersistOutcome        string                `json:"goal_persist_outcome,omitempty"`         // goal_run status snapshot at persist time
 	GoalPersistDigest         string                `json:"goal_persist_digest,omitempty"`          // assembled subtask content to author into harness files
-	GoalDecisionSubtaskID     string                `json:"goal_decision_subtask_id,omitempty"`     // non-empty for goal-decision tasks (总控 judges a failed node's next step)
-	GoalDecisionSubtaskTitle  string                `json:"goal_decision_subtask_title,omitempty"`  // the failed node's title
-	GoalDecisionSubtaskSpec   string                `json:"goal_decision_subtask_spec,omitempty"`   // the failed node's spec
+	GoalDecisionSubtaskID     string                `json:"goal_decision_subtask_id,omitempty"`     // non-empty for goal-decision tasks (总控 judges a node's next step)
+	GoalDecisionSubtaskTitle  string                `json:"goal_decision_subtask_title,omitempty"`  // the judged node's title
+	GoalDecisionSubtaskSpec   string                `json:"goal_decision_subtask_spec,omitempty"`   // the judged node's spec
 	GoalDecisionFailureReason string                `json:"goal_decision_failure_reason,omitempty"` // why the node failed
-	GoalDecisionDownstream    string                `json:"goal_decision_downstream,omitempty"`     // dependents blocked behind the failed node
+	GoalDecisionDownstream    string                `json:"goal_decision_downstream,omitempty"`     // dependents blocked behind the judged node
+	GoalDecisionTrigger       string                `json:"goal_decision_trigger,omitempty"`        // "failure" (execute node failed) or "reject" (verify node rejected its review)
+	GoalDecisionRejectReason  string                `json:"goal_decision_reject_reason,omitempty"`  // the verifier's stated reason, when trigger=="reject"
+	GoalDecisionAttempts      int32                 `json:"goal_decision_attempts,omitempty"`       // how many times the judged node has already been attempted
+	GoalDecisionDagSnapshot   string                `json:"goal_decision_dag_snapshot,omitempty"`   // global view of every node's current state, so the coordinator sees what's still running
 	SquadID                   string                `json:"squad_id,omitempty"`                     // when the picker was a squad, the squad's UUID; Agent is still the resolved leader
 	SquadName                 string                `json:"squad_name,omitempty"`                   // display name for the picker squad, used in prompt text
 	ParentIssueID             string                `json:"parent_issue_id,omitempty"`              // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under

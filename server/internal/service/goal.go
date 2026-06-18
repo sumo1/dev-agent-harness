@@ -75,6 +75,11 @@ type GoalSubtaskContext struct {
 	// surfaces the `multica goal report` artifact channel (filed GitHub issue /
 	// opened PR) to the execute prompt. False for ordinary task-mode subtasks.
 	Autofix bool `json:"autofix,omitempty"`
+	// RerunFeedback is the incremental instruction for a re-run: when a
+	// coordinator retries/reshapes a node after a reviewer rejected it, this
+	// carries the reviewer's reason so the (session-resumed) agent fixes the
+	// specific points instead of starting over. Empty on first run.
+	RerunFeedback string `json:"rerun_feedback,omitempty"`
 }
 
 // GoalPlanningContextType marks a task as a goal-planning job: the squad leader
@@ -171,7 +176,7 @@ const GoalDecisionContextType = "goal_decision"
 type GoalDecisionContext struct {
 	Type          string `json:"type"`
 	GoalRunID     string `json:"goal_run_id"`
-	GoalSubtaskID string `json:"goal_subtask_id"` // the failed node being judged
+	GoalSubtaskID string `json:"goal_subtask_id"` // the node being judged
 	WorkspaceID   string `json:"workspace_id"`
 	GoalTitle     string `json:"goal_title"`
 	SubtaskTitle  string `json:"subtask_title"`
@@ -180,6 +185,21 @@ type GoalDecisionContext struct {
 	// Downstream is a human-readable list of the dependents that are blocked
 	// behind this node, so the coordinator understands the blast radius.
 	Downstream string `json:"downstream"`
+	// Trigger distinguishes WHY this judgment is needed: "failure" (an execute
+	// node failed) or "reject" (a verify node rejected the work it reviewed).
+	// The prompt steers the coordinator differently for each.
+	Trigger string `json:"trigger,omitempty"`
+	// RejectReason carries the verifier's stated reason when Trigger=="reject".
+	RejectReason string `json:"reject_reason,omitempty"`
+	// Attempts is how many times the judged node has already been attempted, so
+	// the coordinator can weigh "try once more" against "this is fundamentally
+	// stuck" — instead of a hardcoded attempt-budget rule doing it blindly.
+	Attempts int32 `json:"attempts,omitempty"`
+	// DagSnapshot is a human-readable global view of EVERY node's current state
+	// (title / kind / status). This is the key to LLM-driven orchestration: the
+	// coordinator can see what is still running, what already completed, and what
+	// is waiting — so it never decides as if the failed node were the whole world.
+	DagSnapshot string `json:"dag_snapshot,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -917,10 +937,59 @@ func (s *GoalService) dispatchReadySubtasks(ctx context.Context, run db.GoalRun)
 	return nil
 }
 
+// depsSatisfied reports whether every dependency of st has reached a
+// success-terminal state (completed or skipped). It is the single dependency
+// gate: a node — especially a verify node — must never run while any node it
+// depends on is still pending/ready/running. Returns true for a dependency-free
+// (root) node.
+//
+// This structurally prevents the "verify抢跑" class of bug: even if a caller
+// re-arms and tries to redispatch a verify node while the nodes it reviews are
+// being re-run, the gate holds it back until those nodes finish. When the last
+// dependency completes, unblockDownstream re-triggers the dispatch.
+func (s *GoalService) depsSatisfied(ctx context.Context, st db.GoalSubtask) bool {
+	for _, depID := range st.DependsOn {
+		dep, err := s.Queries.GetGoalSubtask(ctx, depID)
+		if err != nil {
+			return false
+		}
+		if dep.Status != "completed" && dep.Status != "skipped" {
+			return false
+		}
+	}
+	return true
+}
+
 // dispatchSubtask enqueues one subtask's execution task and marks it running.
 func (s *GoalService) dispatchSubtask(ctx context.Context, run db.GoalRun, st db.GoalSubtask) error {
+	return s.dispatchSubtaskWithFeedback(ctx, run, st, "")
+}
+
+// dispatchSubtaskWithFeedback is dispatchSubtask plus an incremental rerun
+// instruction (the reviewer's reject reason) injected into the prompt, used by
+// the retry/reshape decision path so a session-resumed agent fixes the specific
+// points rather than starting over.
+func (s *GoalService) dispatchSubtaskWithFeedback(ctx context.Context, run db.GoalRun, st db.GoalSubtask, rerunFeedback string) error {
 	if !st.AssigneeAgentID.Valid {
 		return fmt.Errorf("subtask has no assignee agent")
+	}
+	// Dependency gate (the single choke point): never dispatch a node whose
+	// dependencies have not all reached completed/skipped. If a caller tries to
+	// dispatch too early, hold the node at 'pending' and bail without error —
+	// unblockDownstream will redispatch it once the last dependency completes.
+	if !s.depsSatisfied(ctx, st) {
+		if st.Status != "pending" {
+			if held, err := s.Queries.UpdateGoalSubtaskStatus(ctx, db.UpdateGoalSubtaskStatusParams{
+				ID:     st.ID,
+				Status: "pending",
+			}); err == nil {
+				s.broadcastGoalSubtask(ctx, run.WorkspaceID, held)
+			}
+		}
+		slog.Info("dispatch held: dependencies not satisfied",
+			"goal_subtask_id", util.UUIDToString(st.ID),
+			"kind", st.Kind)
+		return nil
 	}
 	agent, err := s.Queries.GetAgent(ctx, st.AssigneeAgentID)
 	if err != nil {
@@ -942,6 +1011,7 @@ func (s *GoalService) dispatchSubtask(ctx context.Context, run db.GoalRun, st db
 		SubtaskTitle:  st.Title,
 		Spec:          st.Spec,
 		Kind:          st.Kind,
+		RerunFeedback: rerunFeedback,
 	}
 	if run.ProjectID.Valid {
 		payload.ProjectID = util.UUIDToString(run.ProjectID)
@@ -1342,9 +1412,13 @@ func buildGoalHandoffBrief(st db.GoalSubtask) string {
 // its verdict via the CLI (which sets goal_subtask.verdict), so by the time the
 // task completes the verdict is already persisted. We read it and act:
 //   - pass: the verify node counts as completed → unblock downstream.
-//   - reject: bounce the reviewed node(s) back for a bounded retry, then re-arm
-//     this verify node to judge again. If a reviewed node is out of attempts,
-//     it fails (→ blocks downstream, existing policy).
+//   - reject: do NOT auto-bounce with a hardcoded attempt budget (that抢跑'd the
+//     reviewed nodes and mis-killed running work). Instead ask the coordinator
+//     (主链路 LLM) what to do next via a goal_decision task — it sees the reject
+//     reason + the global DAG snapshot and decides retry / reshape / proceed /
+//     abort. The verify node is parked at 'pending' so the dependency gate keeps
+//     it from re-running until the reviewed nodes are re-done and it is
+//     explicitly re-armed.
 //   - missing verdict (agent forgot to report): fail-open to pass + warn. A
 //     broken verifier must not deadlock delivery.
 func (s *GoalService) handleVerifyCompleted(ctx context.Context, verify db.GoalSubtask, task db.AgentTaskQueue) {
@@ -1362,59 +1436,63 @@ func (s *GoalService) handleVerifyCompleted(ctx context.Context, verify db.GoalS
 	}
 
 	if verdict == "reject" {
-		// Try to bounce each reviewed node back for another attempt.
 		run, rerr := s.Queries.GetGoalRun(ctx, fresh.GoalRunID)
 		if rerr != nil {
 			slog.Error("verify reject: load run", "error", rerr)
 			return
 		}
-		anyRetried := false
+		// The verifier's reason lives in the verdict result JSON ({"reason": ...}),
+		// written by SubmitVerdict. Fall back to failure_reason for older rows.
+		rejectReason := ""
+		if len(fresh.Result) > 0 {
+			var r struct {
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal(fresh.Result, &r) == nil {
+				rejectReason = strings.TrimSpace(r.Reason)
+			}
+		}
+		if rejectReason == "" && fresh.FailureReason.Valid {
+			rejectReason = fresh.FailureReason.String
+		}
+		// Park the verify node at 'pending'. It must not run again until the
+		// reviewed nodes are re-done and the coordinator re-arms it; the
+		// dependency gate in dispatchSubtask enforces that structurally.
+		if parked, perr := s.Queries.UpdateGoalSubtaskStatus(ctx, db.UpdateGoalSubtaskStatusParams{
+			ID:     fresh.ID,
+			Status: "pending",
+		}); perr == nil {
+			s.broadcastGoalSubtask(ctx, wsID, parked)
+			fresh = parked
+		}
+		// The reviewed nodes (verify's dependencies) are the work to re-judge.
+		reviewed := make([]db.GoalSubtask, 0, len(fresh.DependsOn))
 		for _, depID := range fresh.DependsOn {
-			dep, derr := s.Queries.GetGoalSubtask(ctx, depID)
-			if derr != nil {
-				continue
-			}
-			if dep.Attempt < dep.MaxAttempts {
-				if rearmed, err := s.Queries.RearmGoalSubtask(ctx, dep.ID); err == nil {
-					s.broadcastGoalSubtask(ctx, wsID, rearmed)
-					if dderr := s.dispatchSubtask(ctx, run, rearmed); dderr != nil {
-						slog.Error("verify reject: redispatch reviewed", "error", dderr)
-					} else {
-						anyRetried = true
-					}
-				}
-			} else {
-				// Reviewed node exhausted its attempts under rejection → fail it,
-				// which blocks downstream via the existing terminal handler.
-				if failed, err := s.Queries.FailGoalSubtask(ctx, db.FailGoalSubtaskParams{
-					ID:            dep.ID,
-					FailureReason: pgtype.Text{String: "rejected by verifier, out of attempts", Valid: true},
-				}); err == nil {
-					s.broadcastGoalSubtask(ctx, wsID, failed)
-					s.handleSubtaskTerminal(ctx, fresh.GoalRunID, dep.ID, false)
-				}
+			if dep, derr := s.Queries.GetGoalSubtask(ctx, depID); derr == nil {
+				reviewed = append(reviewed, dep)
 			}
 		}
-		if anyRetried {
-			// Re-arm this verifier to judge the fresh output once it's back.
-			if rearmed, err := s.Queries.RearmGoalSubtask(ctx, fresh.ID); err == nil {
-				s.broadcastGoalSubtask(ctx, wsID, rearmed)
-				if dderr := s.dispatchSubtask(ctx, run, rearmed); dderr != nil {
-					slog.Error("verify reject: re-arm verifier", "error", dderr)
-				}
-			}
-		} else {
-			// Nothing could be retried (all reviewed nodes failed) → this verify
-			// node is moot; mark it completed so the goal can roll up.
-			if done, err := s.Queries.SetGoalSubtaskVerdict(ctx, db.SetGoalSubtaskVerdictParams{
-				ID:      fresh.ID,
-				Verdict: pgtype.Text{String: "reject", Valid: true},
-				Result:  task.Result,
-			}); err == nil {
-				s.broadcastGoalSubtask(ctx, wsID, done)
-			}
+		// Ask the coordinator how to proceed. The judged node is the verifier
+		// itself; the coordinator decides whether to retry the reviewed work,
+		// reshape it, accept it (proceed), or abort.
+		if s.dispatchDecisionTask(ctx, run, fresh.ID, reviewed, "reject", rejectReason) {
 			s.recomputeGoalStatus(ctx, fresh.GoalRunID)
+			return
 		}
+		// No coordinator available → fail-open: accept the work so delivery is not
+		// deadlocked by a reject we cannot adjudicate (mirrors the missing-verdict
+		// fail-open below). Mark the verify completed with its reject verdict and
+		// unblock downstream.
+		slog.Warn("verify reject: no coordinator to adjudicate — failing open to accept",
+			"goal_subtask_id", util.UUIDToString(fresh.ID))
+		if done, derr := s.Queries.SetGoalSubtaskVerdict(ctx, db.SetGoalSubtaskVerdictParams{
+			ID:      fresh.ID,
+			Verdict: pgtype.Text{String: "reject", Valid: true},
+			Result:  task.Result,
+		}); derr == nil {
+			s.broadcastGoalSubtask(ctx, wsID, done)
+		}
+		s.handleSubtaskTerminal(ctx, fresh.GoalRunID, fresh.ID, true)
 		return
 	}
 
@@ -1658,26 +1736,13 @@ func (s *GoalService) SyncSubtaskFromTask(ctx context.Context, task db.AgentTask
 		s.handleSubtaskTerminal(ctx, st.GoalRunID, subtaskID, true)
 
 	case "failed":
-		// Auto-retry up to max_attempts before giving up (the "自动重试 1-2 轮"
-		// policy). attempt was incremented at dispatch (StartGoalSubtask).
-		if st.Attempt < st.MaxAttempts {
-			slog.Info("goal subtask retry",
-				"goal_subtask_id", util.UUIDToString(subtaskID),
-				"attempt", st.Attempt, "max", st.MaxAttempts)
-			if _, err := s.Queries.UpdateGoalSubtaskStatus(ctx, db.UpdateGoalSubtaskStatusParams{
-				ID:     subtaskID,
-				Status: "ready",
-			}); err == nil {
-				run, rerr := s.Queries.GetGoalRun(ctx, st.GoalRunID)
-				if rerr == nil {
-					readied, _ := s.Queries.GetGoalSubtask(ctx, subtaskID)
-					if derr := s.dispatchSubtask(ctx, run, readied); derr != nil {
-						slog.Error("goal subtask retry dispatch", "error", derr)
-					}
-				}
-			}
-			return
-		}
+		// No hardcoded auto-retry. A failed node — for ANY reason, including a
+		// transient infra/socket error — goes straight to failed, and the
+		// next-step decision (retry / reshape / proceed / abort) is the
+		// coordinator's to make via a goal_decision task (handleSubtaskFailure).
+		// The attempt count is carried into that decision as information, not
+		// used as a blind budget gate. This is the "LLM主链路驱动" policy: the
+		// backend never silently decides to re-run; it asks.
 		failReason := pgtype.Text{String: "task failed", Valid: true}
 		if task.FailureReason.Valid {
 			failReason = task.FailureReason
@@ -1792,7 +1857,7 @@ func (s *GoalService) handleSubtaskFailure(ctx context.Context, goalRunID, subta
 		s.recomputeGoalStatus(ctx, goalRunID)
 		return
 	}
-	if s.dispatchDecisionTask(ctx, run, subtaskID, dependents) {
+	if s.dispatchDecisionTask(ctx, run, subtaskID, dependents, "failure", "") {
 		// Judgment dispatched; leave downstream pending. The goal stays
 		// 'executing' (dependents are still non-terminal) until the coordinator
 		// reports via `multica goal decide`.
@@ -1834,14 +1899,45 @@ func (s *GoalService) loadDependents(
 	return dependents, run, statusByID, true
 }
 
+// buildDagSnapshot renders EVERY node of the goal as a compact line
+// "[status] (kind) title" so a coordinator judging one node sees the whole
+// board: what is still running, what completed, what is waiting. This is what
+// lets the LLM say "node B is still running, don't decide yet" instead of
+// treating the judged node as the entire world.
+func (s *GoalService) buildDagSnapshot(ctx context.Context, goalRunID, focusID pgtype.UUID) string {
+	subtasks, err := s.Queries.ListGoalSubtasks(ctx, goalRunID)
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, st := range subtasks {
+		marker := "  "
+		if st.ID == focusID {
+			marker = "▶ " // the node being judged
+		}
+		kind := st.Kind
+		if kind == "" {
+			kind = "execute"
+		}
+		fmt.Fprintf(&b, "%s[%s] (%s) %s\n", marker, st.Status, kind, st.Title)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // dispatchDecisionTask enqueues one 下一步判断 task for the coordinator (squad
-// leader) about a failed node. Returns true when a decision task was dispatched
-// (caller leaves downstream pending); false when none could be — no coordinator,
-// or a decision is already in flight — so the caller falls back to blocking.
+// leader) about a node that needs a next-step judgment — either an execute node
+// that FAILED (trigger="failure") or a verify node that REJECTED its review
+// (trigger="reject"). Returns true when a decision task was dispatched (caller
+// leaves the DAG paused); false when none could be — no coordinator, or a
+// decision is already in flight — so the caller falls back to its safe default.
+//
+// The payload carries a global DAG snapshot + attempt count + reject reason so
+// the coordinator decides with full context, not blind to what else is running.
 func (s *GoalService) dispatchDecisionTask(
 	ctx context.Context, run db.GoalRun, subtaskID pgtype.UUID, dependents []db.GoalSubtask,
+	trigger, rejectReason string,
 ) bool {
-	// Idempotency: one in-flight decision per failed node.
+	// Idempotency: one in-flight decision per node.
 	if _, err := s.Queries.GetActiveDecisionTaskForSubtask(ctx, util.UUIDToString(subtaskID)); err == nil {
 		return false
 	}
@@ -1855,7 +1951,7 @@ func (s *GoalService) dispatchDecisionTask(
 	}
 	leader, err := s.Queries.GetAgent(ctx, squad.LeaderID)
 	if err != nil || leader.ArchivedAt.Valid || !leader.RuntimeID.Valid {
-		return false // no usable coordinator → fall back to blocking
+		return false // no usable coordinator → fall back to default behavior
 	}
 
 	var down strings.Builder
@@ -1877,6 +1973,10 @@ func (s *GoalService) dispatchDecisionTask(
 		SubtaskSpec:   st.Spec,
 		FailureReason: failureReason,
 		Downstream:    strings.TrimSpace(down.String()),
+		Trigger:       trigger,
+		RejectReason:  rejectReason,
+		Attempts:      st.Attempt,
+		DagSnapshot:   s.buildDagSnapshot(ctx, run.ID, subtaskID),
 	}
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -1896,7 +1996,8 @@ func (s *GoalService) dispatchDecisionTask(
 
 	slog.Info("goal next-step judgment dispatched",
 		"goal_run_id", util.UUIDToString(run.ID),
-		"failed_subtask_id", util.UUIDToString(subtaskID),
+		"judged_subtask_id", util.UUIDToString(subtaskID),
+		"trigger", trigger,
 		"task_id", util.UUIDToString(task.ID),
 		"dependents", len(dependents),
 	)
@@ -1904,16 +2005,21 @@ func (s *GoalService) dispatchDecisionTask(
 	return true
 }
 
-// DecideSubtask enacts the coordinator's 下一步判断 for a failed node, reported via
-// the CLI (`multica goal decide <subtask> proceed|reshape|abort`). It maps the
-// verdict onto the existing intervention transitions:
-//   - proceed: skip the failed node (counts as a non-blocking terminal) → its
-//     dependents unblock and run.
-//   - reshape: optionally rewrite the spec, then re-run the node with a fresh
-//     attempt budget (fix-then-retry).
-//   - abort:   block the whole downstream (the original failure behavior).
+// DecideSubtask enacts the coordinator's 下一步判断, reported via the CLI
+// (`multica goal decide <subtask> retry|reshape|proceed|abort`). The judged node
+// is either a FAILED execute node or a verify node that REJECTED its review
+// (parked at 'pending' by handleVerifyCompleted). The four decisions:
+//   - retry:   re-run the node as-is, fresh attempt budget (no spec change). For
+//     a verify-reject, re-run the REVIEWED nodes, then re-arm the verify.
+//   - reshape: rewrite the spec (--spec), then re-run. For a verify-reject the
+//     spec applies to the single reviewed node (when there is exactly
+//     one); with multiple reviewed nodes, reshape is rejected — use
+//     `multica goal edit-spec` on the specific node first, then retry.
+//   - proceed: accept/skip. A failed node is skipped (non-blocking terminal); a
+//     rejected verify is accepted as pass → downstream unblocks.
+//   - abort:   block the whole downstream.
 //
-// Gated on workspace; the node must actually be in a failed state.
+// Gated on workspace.
 func (s *GoalService) DecideSubtask(
 	ctx context.Context, workspaceID, subtaskID pgtype.UUID, decision, reshapeSpec string,
 ) (db.GoalSubtask, error) {
@@ -1922,18 +2028,34 @@ func (s *GoalService) DecideSubtask(
 		return db.GoalSubtask{}, err
 	}
 
+	// Idempotency guard: a node is "awaiting a decision" only when it FAILED (an
+	// execute failure) or is a verify node parked at 'pending' with a 'reject'
+	// verdict. Anything else means the decision was already enacted (the agent
+	// can call `goal decide` more than once in a single task) — re-enacting would
+	// re-dispatch / re-skip a node that has already moved on. No-op those.
+	isVerifyReject := st.Kind == "verify" && st.Status == "pending" &&
+		st.Verdict.Valid && st.Verdict.String == "reject"
+	awaitingDecision := st.Status == "failed" || isVerifyReject
+	if !awaitingDecision {
+		slog.Info("goal decide ignored: node not awaiting a decision",
+			"goal_subtask_id", util.UUIDToString(subtaskID),
+			"status", st.Status, "kind", st.Kind, "decision", decision)
+		return st, nil
+	}
+
 	switch decision {
-	case "proceed":
-		skipped, serr := s.Queries.SkipGoalSubtask(ctx, subtaskID)
-		if serr != nil {
-			return db.GoalSubtask{}, fmt.Errorf("proceed (skip): %w", serr)
-		}
+	case "retry":
 		run = s.reviveGoalIfTerminal(ctx, run)
-		s.broadcastGoalSubtask(ctx, run.WorkspaceID, skipped)
-		s.handleSubtaskTerminal(ctx, run.ID, subtaskID, true)
-		return skipped, nil
+		if isVerifyReject {
+			return s.rerunReviewedThenVerify(ctx, run, st, "")
+		}
+		return s.rearmAndDispatch(ctx, run, subtaskID)
 
 	case "reshape":
+		if isVerifyReject {
+			run = s.reviveGoalIfTerminal(ctx, run)
+			return s.rerunReviewedThenVerify(ctx, run, st, reshapeSpec)
+		}
 		if strings.TrimSpace(reshapeSpec) != "" {
 			if _, uerr := s.Queries.UpdateGoalSubtaskSpec(ctx, db.UpdateGoalSubtaskSpecParams{
 				ID:   subtaskID,
@@ -1945,6 +2067,32 @@ func (s *GoalService) DecideSubtask(
 		run = s.reviveGoalIfTerminal(ctx, run)
 		return s.rearmAndDispatch(ctx, run, subtaskID)
 
+	case "proceed":
+		if isVerifyReject {
+			// Accept the reviewed work despite the reject: complete the verify as
+			// a pass-equivalent terminal so its downstream unblocks.
+			run = s.reviveGoalIfTerminal(ctx, run)
+			accepted, aerr := s.Queries.SetGoalSubtaskVerdict(ctx, db.SetGoalSubtaskVerdictParams{
+				ID:      subtaskID,
+				Verdict: pgtype.Text{String: "pass", Valid: true},
+				Result:  st.Result,
+			})
+			if aerr != nil {
+				return db.GoalSubtask{}, fmt.Errorf("proceed (accept review): %w", aerr)
+			}
+			s.broadcastGoalSubtask(ctx, run.WorkspaceID, accepted)
+			s.handleSubtaskTerminal(ctx, run.ID, subtaskID, true)
+			return accepted, nil
+		}
+		skipped, serr := s.Queries.SkipGoalSubtask(ctx, subtaskID)
+		if serr != nil {
+			return db.GoalSubtask{}, fmt.Errorf("proceed (skip): %w", serr)
+		}
+		run = s.reviveGoalIfTerminal(ctx, run)
+		s.broadcastGoalSubtask(ctx, run.WorkspaceID, skipped)
+		s.handleSubtaskTerminal(ctx, run.ID, subtaskID, true)
+		return skipped, nil
+
 	case "abort":
 		s.blockDownstream(ctx, run.ID, subtaskID)
 		updated, gerr := s.Queries.GetGoalSubtask(ctx, subtaskID)
@@ -1954,8 +2102,77 @@ func (s *GoalService) DecideSubtask(
 		return updated, nil
 
 	default:
-		return db.GoalSubtask{}, fmt.Errorf("decision must be 'proceed', 'reshape', or 'abort'")
+		return db.GoalSubtask{}, fmt.Errorf("decision must be 'retry', 'reshape', 'proceed', or 'abort'")
 	}
+}
+
+// rerunReviewedThenVerify re-runs the nodes a rejected verify node reviewed, then
+// leaves the verify parked at 'pending'. The dependency gate re-arms and
+// redispatches the verify automatically once every reviewed node completes again
+// (via unblockDownstream) — so the verifier always judges the FRESH output and
+// never抢跑s while the reviewed nodes are still running.
+//
+// When reshapeSpec is non-empty it applies to the reviewed node, but only when
+// there is exactly one — with several reviewed nodes the target is ambiguous.
+func (s *GoalService) rerunReviewedThenVerify(
+	ctx context.Context, run db.GoalRun, verify db.GoalSubtask, reshapeSpec string,
+) (db.GoalSubtask, error) {
+	reviewedIDs := verify.DependsOn
+	if len(reviewedIDs) == 0 {
+		return db.GoalSubtask{}, fmt.Errorf("verify node has no reviewed dependencies to re-run")
+	}
+	if strings.TrimSpace(reshapeSpec) != "" {
+		if len(reviewedIDs) != 1 {
+			return db.GoalSubtask{}, fmt.Errorf("reshape needs a single target: this review covers %d nodes — edit the specific node's spec, then retry", len(reviewedIDs))
+		}
+		if _, uerr := s.Queries.UpdateGoalSubtaskSpec(ctx, db.UpdateGoalSubtaskSpecParams{
+			ID:   reviewedIDs[0],
+			Spec: reshapeSpec,
+		}); uerr != nil {
+			return db.GoalSubtask{}, fmt.Errorf("reshape reviewed node: %w", uerr)
+		}
+	}
+	// Ensure the verify node is parked at pending (the gate keeps it there until
+	// the reviewed nodes complete again).
+	if verify.Status != "pending" {
+		if parked, perr := s.Queries.UpdateGoalSubtaskStatus(ctx, db.UpdateGoalSubtaskStatusParams{
+			ID:     verify.ID,
+			Status: "pending",
+		}); perr == nil {
+			s.broadcastGoalSubtask(ctx, run.WorkspaceID, parked)
+			verify = parked
+		}
+	}
+	// The reviewer's reason becomes the incremental instruction for the re-run,
+	// so each reviewed node's (session-resumed) agent addresses the specific
+	// points instead of starting over. It lives in the verdict result JSON.
+	feedback := ""
+	if len(verify.Result) > 0 {
+		var r struct {
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(verify.Result, &r) == nil {
+			feedback = strings.TrimSpace(r.Reason)
+		}
+	}
+	if feedback == "" && verify.FailureReason.Valid {
+		feedback = verify.FailureReason.String
+	}
+	// Re-run each reviewed node with a fresh budget + the reviewer's feedback.
+	for _, depID := range reviewedIDs {
+		rearmed, rerr := s.Queries.RearmGoalSubtaskFresh(ctx, depID)
+		if rerr != nil {
+			slog.Error("verify reject retry: rearm reviewed", "error", rerr,
+				"reviewed_subtask_id", util.UUIDToString(depID))
+			continue
+		}
+		s.broadcastGoalSubtask(ctx, run.WorkspaceID, rearmed)
+		if derr := s.dispatchSubtaskWithFeedback(ctx, run, rearmed, feedback); derr != nil {
+			slog.Error("verify reject retry: dispatch reviewed", "error", derr,
+				"reviewed_subtask_id", util.UUIDToString(depID))
+		}
+	}
+	return verify, nil
 }
 
 // recomputeGoalStatus rolls subtask states up to the goal_run:

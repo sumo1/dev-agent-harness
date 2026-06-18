@@ -57,40 +57,44 @@ func BuildPrompt(task Task, provider string) string {
 // The leader must emit a JSON plan and submit it via `multica goal plan`.
 func buildGoalPlanningPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are the PMO (squad leader) for a Multica workspace. Decompose the goal below into an executable plan of subtasks, assign each to a role agent from your squad roster, and declare dependencies between subtasks.\n\n")
+	b.WriteString("You are the PMO (squad leader) for a Multica workspace. Decompose the goal below into an executable plan of subtasks, assign each to a role agent, and declare the dependencies between them. The agents you can assign to — your Squad Roster AND the Available workspace roles pool — are listed in your Instructions; read each row's role description and its `model:` tag, because both drive the choices below.\n\n")
 	if task.GoalTitle != "" {
 		fmt.Fprintf(&b, "Goal title: %s\n\n", task.GoalTitle)
 	}
 	b.WriteString("Goal:\n")
 	fmt.Fprintf(&b, "%s\n\n", task.GoalPlanningGoal)
 
+	// Autofix runs mandate a fixed N1→N4 chain; that is simply an instance of
+	// principle 1's GENUINE PIPELINE shape, so the principles below stay coherent
+	// with it — do NOT reintroduce any absolutist "parallel-always" framing.
 	if task.GoalPlanningAutofix {
 		writeAutofixPlanningGuidance(&b, task)
 	}
 
-	b.WriteString("Design a workflow, not just a flat task list. Based on the goal and the roles available to you (your Squad Roster AND the Available workspace roles pool), decide the shape:\n")
-	b.WriteString("- Break the goal into the smallest set of nodes that fully covers it. Prefer 2–6 execute nodes.\n")
-	b.WriteString("- Assign each node to ONE role agent by its UUID — choose from your Squad Roster OR the Available workspace roles pool (pool agents do NOT need to be squad members; you can assign work to them directly). Each roster entry carries the role's description — READ IT and match the node to the role whose described specialty fits best (don't pick by name alone; e.g. send implementation to a coder, a verify node to a reviewer/evaluator). Prefer roles flagged as this project's own. Don't pile every node onto yourself when a better-suited role exists; use yourself only when no listed role fits.\n")
-	b.WriteString("- Declare dependencies with `depends_on` (the `seq` numbers that must finish first). Independent nodes run in parallel; chain nodes that build on each other.\n")
-	b.WriteString("- Each node `spec` is the full instruction its role receives — write it so the role can act end to end without seeing the other nodes.\n")
-	b.WriteString("- Keep workflow topology internal. In a node `spec`, do NOT refer to `seq1`, `seq2`, node numbers, dependency edges, upstream/downstream nodes, or \"previous/next node\". Use semantic input names such as \"core mechanism explanation\", \"accepted API contract\", or \"review constraints\".\n")
-	b.WriteString("- If a node must consume a prior work product, declare that producer in `depends_on`. If a synthesis node needs both producer outputs and a review verdict, depend on the producers AND the verifier; do not hide required source material behind a verifier-only dependency.\n\n")
+	b.WriteString("Pick the RIGHT SHAPE for THIS goal, then write each node so its role can act on it alone. Work from these principles:\n\n")
 
-	b.WriteString("Write each node `spec` as a DUAL CONTRACT — a construction part (what to build: scope, files in/out, expected output, constraints) AND an acceptance part (how to verify it's done: concrete, machine-checkable criteria). Pair them: every construction output should have a matching acceptance check. If you cannot state how a node is verified, its construction part is underspecified — tighten it.\n")
+	b.WriteString("1. Match the shape to the nature of the work. First decide which one of these the goal is, then let that choose the topology:\n")
+	b.WriteString("   - COHERENT COGNITIVE WORK — one continuous act of understanding-and-describing: analyze this codebase, write this design doc, review this proposal, answer this question. This is ONE mind's job, so use ONE execute node. Do NOT split it into parallel \"aspect\" nodes (e.g. layering, pros/cons, change-points) that each re-read the same material and then need stitching back together — that fragments one understanding and invents work. There is nothing to merge, so there is no merge node. Optionally add at most ONE independent review node.\n")
+	b.WriteString("   - INDEPENDENT CONSTRUCTION — separable build units that can be produced at the same time without seeing each other's intermediate work (e.g. a data layer, an HTTP API, and a client built against a shared contract). Give each unit its own node with `depends_on:[]`; they run together. Add ONE converging node only when the independently-built parts must then be wired into a single artifact. The converge node is legitimate ONLY here, where genuinely-parallel pieces must merge; it is never a way to reassemble fragments of one coherent deliverable.\n")
+	b.WriteString("   - GENUINE PIPELINE — each step truly consumes the previous step's product and cannot start without it (reproduce a bug, then fix it, then validate the fix). Chain these with `depends_on`. A chain is correct here, not a failure.\n\n")
+
+	b.WriteString("2. Prefer the fewest nodes that fully cover the goal. Parallelism is a tool that pays off only when the units are genuinely independent — it is not a target to maximize, and idle agents are cheaper than a fragmented deliverable. One capable node owning a coherent piece beats several nodes that hand fragments around; add a node only when it does work no other node does. A \"stitch\" or \"synthesis\" node that exists only to reassemble pieces of ONE coherent deliverable is the smell of over-splitting. Never add a node to write the final user-facing summary — closeout is produced for you after the plan finishes.\n\n")
+
+	b.WriteString("3. Assign each node to the ONE role whose described specialty actually fits it — read the descriptions, don't pick by name (send analysis or writing to an analyst or writer, implementation to a coder, review to a reviewer). Prefer roles flagged as this project's own. You may assign to any agent in the Squad Roster or the workspace pool (pool agents are directly assignable and need not be squad members); assign only to agent rows, never to a human. If no role fits a node well, keep that work in ONE node done by the best-available role or by yourself — never force an analysis node onto a coder because it was the only role left, and never split work just to hand pieces to more roles.\n\n")
+
+	b.WriteString("4. Verify where the stakes or error-risk justify the cost; skip it for low-stakes or trivial work, since each `\"kind\":\"verify\"` node is a full extra agent run. A verify node adversarially reviews the work products it depends on and returns a pass/reject verdict, naming semantic review criteria, not node numbers. Assign it to a DIFFERENT role than the one being reviewed, and prefer a verifier on a DIFFERENT model than the node it reviews (each roster row shows its `model:` — claude / gemini / codex): a model is blind to its own mistakes, so a same-model review tends to rubber-stamp them. If no different-model role fits, a different same-model role still beats self-review. Verification is judgment, not ceremony.\n\n")
+
+	b.WriteString("Write each node `spec` as the complete instruction its role receives — it acts on the spec alone and never sees the other nodes or the graph. Make every spec a DUAL CONTRACT: a construction part (what to build — scope, inputs, expected output, constraints) paired with an acceptance part (how done-ness is judged — concrete criteria; for an analysis or writing deliverable the criteria are qualitative, e.g. \"covers the layering, the key change-points, and states each trade-off\", not a passing command). If you cannot state how a node is accepted, its construction part is underspecified. Keep workflow topology internal: a spec must NOT refer to `seq1`, `seq2`, node numbers, dependency edges, or \"previous/next node\" — refer to what a node consumes by a semantic name (\"the accepted API contract\", \"the core mechanism explanation\", \"the review constraints\"). When a node consumes another's output, declare that producer in `depends_on`; when a converging node needs both producer outputs and a review verdict, depend on the producers AND the verifier so the source material is not hidden behind the verdict.\n")
 	if task.ProjectID != "" {
-		b.WriteString("Match THIS project's own contract dialect — do NOT impose a fixed template. You are running inside the project repository: first look at its existing task contracts (e.g. `docs/task/*/plan/*.md`) and reuse that project's section names, structure, and language when writing each spec. Only fall back to the generic construction/acceptance shape when the project has no existing contracts to mirror.\n")
+		b.WriteString("Match THIS project's own contract dialect — do NOT impose a fixed template. You are running inside the project repository: look at its existing task contracts (e.g. `docs/task/*/plan/*.md`) and reuse that project's section names, structure, and language when writing each spec. Fall back to the generic construction/acceptance shape only when the project has no contracts to mirror.\n")
 	}
 	b.WriteString("\n")
-
-	b.WriteString("Node kinds — insert adversarial verification where quality matters:\n")
-	b.WriteString("- `\"kind\":\"execute\"` (default): does the work.\n")
-	b.WriteString("- `\"kind\":\"verify\"`: adversarially reviews the work products it receives through `depends_on` and returns a pass/reject verdict. Use a DIFFERENT role than the one being reviewed (independent perspective). Its `spec` should name the semantic review criteria, not node numbers. A reject bounces the reviewed node back for another attempt, then re-verifies. Add verify nodes for high-stakes or error-prone work; skip them for trivial steps to save cost.\n\n")
 
 	b.WriteString("Submit the plan with this exact command (pass the JSON array on stdin):\n\n")
 	fmt.Fprintf(&b, "  echo '<json>' | multica goal plan %s --subtasks-stdin\n\n", task.GoalPlanningRunID)
 	b.WriteString("Each node: {\"seq\": <int>, \"title\": \"...\", \"spec\": \"...\", \"assignee_agent_id\": \"<uuid>\", \"depends_on\": [<seq>...], \"kind\": \"execute\"|\"verify\"}. Omit `kind` for execute.\n")
-	b.WriteString("Example with adversarial verification (the final node depends on both the producer and the verifier because it needs the API contract plus review constraints):\n")
-	b.WriteString("  [{\"seq\":1,\"title\":\"Backend API\",\"spec\":\"Implement POST /auth/login and report the accepted request/response contract\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[]},{\"seq\":2,\"title\":\"Security review\",\"spec\":\"Adversarially review the provided login API work product for authentication flaws and report a pass/reject verdict with any constraints\",\"assignee_agent_id\":\"<reviewer-uuid>\",\"depends_on\":[1],\"kind\":\"verify\"},{\"seq\":3,\"title\":\"Frontend\",\"spec\":\"Wire the login form using the provided accepted API contract and review constraints\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[1,2]}]\n\n")
+	b.WriteString("Example of the preferred shape — a parallel fan-out, then converge (note the FIRST WAVE has three independent `depends_on:[]` execute nodes that run at the same time, two of them on the same coder; the review fans IN over all of them; the final synthesis depends on the producers AND the verifier):\n")
+	b.WriteString("  [{\"seq\":1,\"title\":\"Data layer\",\"spec\":\"Implement the storage schema and queries; report the accepted data contract\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[]},{\"seq\":2,\"title\":\"HTTP API\",\"spec\":\"Implement the request handlers; report the accepted request/response contract\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[]},{\"seq\":3,\"title\":\"Client SDK\",\"spec\":\"Implement the client wrapper against the documented contract; report the exposed methods\",\"assignee_agent_id\":\"<coder2-uuid>\",\"depends_on\":[]},{\"seq\":4,\"title\":\"Integration review\",\"spec\":\"Adversarially review the provided data, API and SDK work products for contract mismatches and report a pass/reject verdict with any constraints\",\"assignee_agent_id\":\"<reviewer-uuid>\",\"depends_on\":[1,2,3],\"kind\":\"verify\"},{\"seq\":5,\"title\":\"Wire end to end\",\"spec\":\"Integrate the provided data, API and SDK work products into a working flow honoring the review constraints\",\"assignee_agent_id\":\"<coder-uuid>\",\"depends_on\":[1,2,3,4]}]\n\n")
 	b.WriteString("Do not execute the nodes yourself — submitting the plan dispatches them automatically. Submit exactly one plan, then stop.\n")
 	return b.String()
 }
@@ -179,28 +183,69 @@ func buildGoalPersistPrompt(task Task) string {
 // the DAG (proceed/reshape/abort). The coordinator passes a DECISION, not data.
 func buildGoalDecisionPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are the 总控 (squad leader / coordinator) for a Multica workspace. A subtask you planned has FAILED, and other subtasks depend on it. Decide the next step — do NOT redo the failed work yourself.\n\n")
+
+	reject := task.GoalDecisionTrigger == "reject"
+	if reject {
+		b.WriteString("You are the 总控 (squad leader / coordinator) for a Multica workspace. An independent reviewer (a verify node, deliberately on a DIFFERENT model) REJECTED the work it reviewed. Decide the next step — do NOT redo the work yourself.\n\n")
+	} else {
+		b.WriteString("You are the 总控 (squad leader / coordinator) for a Multica workspace. A subtask you planned has FAILED, and other subtasks depend on it. Decide the next step — do NOT redo the failed work yourself.\n\n")
+	}
 	if task.GoalTitle != "" {
 		fmt.Fprintf(&b, "Overall goal: %s\n\n", task.GoalTitle)
 	}
-	if task.GoalDecisionSubtaskTitle != "" {
-		fmt.Fprintf(&b, "Failed subtask: %s\n", task.GoalDecisionSubtaskTitle)
+
+	// Global DAG snapshot — the whole board, so you never decide as if this node
+	// were the only thing happening. Some nodes may still be running; weigh that.
+	if task.GoalDecisionDagSnapshot != "" {
+		b.WriteString("Current state of ALL nodes (▶ marks the one under judgment):\n")
+		fmt.Fprintf(&b, "%s\n\n", task.GoalDecisionDagSnapshot)
+		b.WriteString("If other nodes are still `running` or `ready`, that work is in flight — your decision does not need to wait for them, but do not assume they failed.\n\n")
 	}
-	if task.GoalDecisionSubtaskSpec != "" {
-		fmt.Fprintf(&b, "Its spec:\n%s\n", task.GoalDecisionSubtaskSpec)
+
+	if reject {
+		if task.GoalDecisionSubtaskTitle != "" {
+			fmt.Fprintf(&b, "Rejected review: %s\n", task.GoalDecisionSubtaskTitle)
+		}
+		if task.GoalDecisionRejectReason != "" {
+			fmt.Fprintf(&b, "Reviewer's reason for rejecting:\n%s\n", task.GoalDecisionRejectReason)
+		}
+		if task.GoalDecisionDownstream != "" {
+			b.WriteString("\nThe reviewed work that this verdict covers:\n")
+			fmt.Fprintf(&b, "%s\n", task.GoalDecisionDownstream)
+		}
+	} else {
+		if task.GoalDecisionSubtaskTitle != "" {
+			fmt.Fprintf(&b, "Failed subtask: %s\n", task.GoalDecisionSubtaskTitle)
+		}
+		if task.GoalDecisionSubtaskSpec != "" {
+			fmt.Fprintf(&b, "Its spec:\n%s\n", task.GoalDecisionSubtaskSpec)
+		}
+		if task.GoalDecisionFailureReason != "" {
+			fmt.Fprintf(&b, "Why it failed: %s\n", task.GoalDecisionFailureReason)
+		}
+		if task.GoalDecisionDownstream != "" {
+			b.WriteString("\nDownstream subtasks blocked behind it:\n")
+			fmt.Fprintf(&b, "%s\n", task.GoalDecisionDownstream)
+		}
 	}
-	if task.GoalDecisionFailureReason != "" {
-		fmt.Fprintf(&b, "Why it failed: %s\n", task.GoalDecisionFailureReason)
+	if task.GoalDecisionAttempts > 0 {
+		fmt.Fprintf(&b, "\nThis node has already been attempted %d time(s) — weigh \"try once more\" against \"this approach is stuck\".\n", task.GoalDecisionAttempts)
 	}
-	if task.GoalDecisionDownstream != "" {
-		b.WriteString("\nDownstream subtasks blocked behind it:\n")
-		fmt.Fprintf(&b, "%s\n", task.GoalDecisionDownstream)
+
+	b.WriteString("\nInspect the actual artifacts (files, diffs, logs) left behind to understand the real situation. Then choose ONE next step and report it with this exact command:\n\n")
+	if reject {
+		fmt.Fprintf(&b, "  multica goal decide %s retry                            # the reviewer is right; re-run the reviewed work to address the feedback, then it gets re-reviewed\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s reshape --spec \"<new spec>\"      # the reviewed work needs a different approach (only when ONE node was reviewed)\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s proceed                          # the rejection is not fatal; accept the work as-is and let downstream run\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s abort                            # the work cannot be salvaged; stop this branch\n\n", task.GoalDecisionSubtaskID)
+		b.WriteString("Choose `retry` when the reviewer's points are addressable by re-running the work (the most common case). Choose `proceed` only when the rejection is pedantic / non-blocking. Choose `abort` when the goal cannot continue. After `retry`/`reshape`, the reviewed work re-runs and the SAME reviewer judges the fresh output automatically — you do not re-arm anything. Report exactly one decision, then stop.\n")
+	} else {
+		fmt.Fprintf(&b, "  multica goal decide %s retry                            # transient/fixable failure; re-run the node as-is with a fresh attempt\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s reshape --spec \"<new spec>\"      # the approach was wrong; rewrite the spec and re-run the node\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s proceed                          # the failure is non-fatal; skip it and let downstream run\n", task.GoalDecisionSubtaskID)
+		fmt.Fprintf(&b, "  multica goal decide %s abort                            # the failure blocks everything downstream; stop this branch\n\n", task.GoalDecisionSubtaskID)
+		b.WriteString("Choose `retry` for a transient failure (e.g. a dropped connection, a flaky step) where the same approach should just be re-run. Choose `reshape` when a different approach is needed (the spec you pass replaces the failed one). Choose `proceed` only when the downstream genuinely does not need this node's output. Choose `abort` when the goal cannot meaningfully continue. Report exactly one decision, then stop.\n")
 	}
-	b.WriteString("\nInspect the actual artifacts (files, diffs, logs) the failed subtask left behind to understand whether its failure is fatal to the downstream or not. Then choose ONE next step and report it with this exact command:\n\n")
-	fmt.Fprintf(&b, "  multica goal decide %s proceed                          # the failure is non-fatal; skip it and let downstream run\n", task.GoalDecisionSubtaskID)
-	fmt.Fprintf(&b, "  multica goal decide %s reshape --spec \"<new spec>\"      # the approach was wrong; rewrite the spec and retry the node\n", task.GoalDecisionSubtaskID)
-	fmt.Fprintf(&b, "  multica goal decide %s abort                            # the failure blocks everything downstream; stop this branch\n\n", task.GoalDecisionSubtaskID)
-	b.WriteString("Choose `proceed` only when the downstream genuinely does not need this node's output. Choose `reshape` when a different approach could succeed (the spec you pass replaces the failed one). Choose `abort` when the goal cannot meaningfully continue past this failure. Report exactly one decision, then stop.\n")
 	return b.String()
 }
 
@@ -222,6 +267,13 @@ func buildGoalSubtaskPrompt(task Task) string {
 	}
 	b.WriteString("Task contract:\n")
 	fmt.Fprintf(&b, "%s\n\n", task.GoalSubtaskSpec)
+	// Re-run feedback: a reviewer rejected the previous attempt. Your prior agent
+	// session is resumed, so build on what you already did — fix THESE points, do
+	// not start over.
+	if task.GoalRerunFeedback != "" {
+		b.WriteString("This is a RE-RUN — a reviewer rejected your previous attempt. Your earlier work is preserved (this conversation continues it). Address the reviewer's points specifically; do not rewrite from scratch:\n")
+		fmt.Fprintf(&b, "%s\n\n", task.GoalRerunFeedback)
+	}
 	// Source material: what the coordinator selected for this task. The context
 	// field is still named upstream_output for wire compatibility, but the prompt
 	// presents it as task inputs so the executor does not need to reason about

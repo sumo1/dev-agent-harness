@@ -559,11 +559,27 @@ func TestBuildGoalPlanningPrompt(t *testing.T) {
 		"Do not execute the nodes yourself",        // planner must not do the work
 		"\"kind\":\"verify\"",                      // workflow design offers verify nodes
 		"adversarially review",                     // adversarial-verification guidance
+		// Parallelism-first steering: the planner must fan out independent
+		// work instead of defaulting to a chain. These guard against the prompt
+		// silently regressing to the old chain-only shape, which collapsed every
+		// plan to sequential execution.
+		"PARALLELISM FIRST",                        // explicit directive
+		"runs multiple independent subtasks",       // same-coder parallelism is allowed
+		"parallel fan-out, then converge",          // the worked example is a fan-out, not a chain
+		"CROSS-MODEL CHECK",                        // verify nodes should prefer a different model
+		"DIFFERENT model than the node it reviews", // explicit cross-model steering
+		"blind to its own mistakes",                // the rationale, so it isn't dropped as noise
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {
 			t.Errorf("goal planning prompt missing %q\n---\n%s", want, out)
 		}
+	}
+
+	// The worked example must contain at least three first-wave nodes
+	// (depends_on:[]) so the model copies a fan-out, not a single root.
+	if strings.Count(out, "\"depends_on\":[]") < 3 {
+		t.Errorf("goal planning example must show a multi-node first wave (>=3 depends_on:[] nodes), got:\n%s", out)
 	}
 }
 

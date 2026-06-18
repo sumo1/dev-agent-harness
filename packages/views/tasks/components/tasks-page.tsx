@@ -72,9 +72,16 @@ export function TasksPage() {
   // it to that subtask's output. null = main session.
   const [activeSubtaskId, setActiveSubtaskId] = useState<string | null>(null);
 
-  const { data: goal } = useQuery({
+  const {
+    data: goal,
+    isError: goalError,
+    isLoading: goalLoading,
+  } = useQuery({
     ...goalRunOptions(wsId, activeTaskId ?? ""),
     enabled: !!wsId && !!activeTaskId,
+    // A goal that 404s (deleted out from under a stale list) is a permanent
+    // miss, not a transient blip — don't hammer it with retries.
+    retry: false,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
       return s === "planning" || s === "executing" ? 3000 : false;
@@ -385,6 +392,33 @@ export function TasksPage() {
               />
             )}
           </>
+        ) : activeTaskId && (goalError || (!goalLoading && !goal?.id)) ? (
+          // A task is selected but its goal could not be loaded: it was deleted
+          // (a stale list still shows it) or the fetch failed. Show an explicit
+          // not-found state instead of a blank panel that looks like a dead click.
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="max-w-xs text-center">
+              <p className="text-sm text-muted-foreground">
+                {t(($) => $.task_page.detail_unavailable)}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => {
+                  setActiveTaskId(null);
+                  setDiscussionChatId(null);
+                  setActiveSubtaskId(null);
+                  qc.invalidateQueries({ queryKey: goalKeys.list(wsId) });
+                }}
+              >
+                {t(($) => $.task_page.detail_unavailable_dismiss)}
+              </Button>
+            </div>
+          </div>
+        ) : activeTaskId && goalLoading ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <p className="text-sm text-muted-foreground">{t(($) => $.task_page.detail_loading)}</p>
+          </div>
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
             <div className="max-w-xs text-center">

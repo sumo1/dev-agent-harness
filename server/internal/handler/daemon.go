@@ -1603,6 +1603,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.GoalUpstreamOutput = gc.UpstreamOutput
 			resp.GoalHandoffBrief = gc.HandoffBrief
 			resp.GoalAutofix = gc.Autofix
+			resp.GoalRerunFeedback = gc.RerunFeedback
 			if resp.WorkspaceID == "" {
 				resp.WorkspaceID = gc.WorkspaceID
 			}
@@ -1619,6 +1620,23 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// Run the executing agent inside the bound project's repo so it can
 			// read its node's contract docs and align output to the project.
 			h.attachProjectContext(r.Context(), &resp, gc.ProjectID)
+
+			//断点续跑: when a coordinator retries/reshapes a node, resume the
+			// node's PRIOR agent session (and workdir) so it continues from where
+			// it left off — addressing the reviewer's feedback incrementally —
+			// instead of rewriting from scratch. Same-runtime only (a session id
+			// is meaningless on a different runtime), and skipped on a forced
+			// fresh session. Goal subtasks key resume on goal_subtask_id.
+			if !task.ForceFreshSession {
+				if prior, err := h.Queries.GetLastSubtaskTaskSession(r.Context(), task.GoalSubtaskID); err == nil {
+					if prior.SessionID.Valid && prior.RuntimeID == task.RuntimeID {
+						resp.PriorSessionID = prior.SessionID.String
+					}
+					if prior.WorkDir.Valid && resp.PriorWorkDir == "" {
+						resp.PriorWorkDir = prior.WorkDir.String
+					}
+				}
+			}
 		}
 	}
 
@@ -1738,6 +1756,10 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.GoalDecisionSubtaskSpec = gd.SubtaskSpec
 			resp.GoalDecisionFailureReason = gd.FailureReason
 			resp.GoalDecisionDownstream = gd.Downstream
+			resp.GoalDecisionTrigger = gd.Trigger
+			resp.GoalDecisionRejectReason = gd.RejectReason
+			resp.GoalDecisionAttempts = gd.Attempts
+			resp.GoalDecisionDagSnapshot = gd.DagSnapshot
 			resp.GoalTitle = gd.GoalTitle
 			if resp.WorkspaceID == "" {
 				resp.WorkspaceID = gd.WorkspaceID

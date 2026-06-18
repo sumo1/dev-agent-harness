@@ -212,6 +212,48 @@ func TestBuildPlanningRoster_IncludesRoleDescriptions(t *testing.T) {
 	}
 }
 
+// TestBuildPlanningRoster_IncludesModelProvider locks the cross-model-review
+// fix: each agent row must surface its runtime provider (model/engine family,
+// e.g. claude / gemini), so the planner can deliberately give a verify node a
+// DIFFERENT model than the node it reviews. Without this the roster only showed
+// name+role+desc and the planner had no way to pick for model diversity.
+func TestBuildPlanningRoster_IncludesModelProvider(t *testing.T) {
+	ctx := context.Background()
+	leaderID, _ := seededLeaderAgent(t)
+	squad := seedSquadForBriefing(t, leaderID, "Model Diversity Squad", "")
+
+	// A workspace agent on a runtime with a known, distinctive provider.
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (
+			workspace_id, daemon_id, name, runtime_mode, provider,
+			status, device_info, metadata, last_seen_at, visibility
+		)
+		VALUES ($1, NULL, 'Gemini test rt', 'cloud', 'gemini', 'online', '', '{}'::jsonb, now(), 'private')
+		RETURNING id
+	`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("create gemini runtime: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
+
+	var agentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_config,
+			runtime_id, visibility, max_concurrent_tasks, owner_id)
+		VALUES ($1, 'gemini-reviewer', 'reviews things', 'cloud', '{}'::jsonb, $2, 'private', 1, $3)
+		RETURNING id
+	`, testWorkspaceID, runtimeID, testUserID).Scan(&agentID); err != nil {
+		t.Fatalf("create gemini agent: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID) })
+
+	out := testHandler.buildPlanningRoster(ctx, squad, "")
+
+	if !strings.Contains(out, "model: gemini") {
+		t.Errorf("planning roster must surface each agent's model provider for cross-model review selection, got:\n%s", out)
+	}
+}
+
 // TestTruncateRoleDesc covers the description trimming used in the roster.
 func TestTruncateRoleDesc(t *testing.T) {
 	if got := truncateRoleDesc("  "); got != "" {

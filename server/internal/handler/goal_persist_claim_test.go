@@ -277,6 +277,101 @@ func TestClaimGoalSubtaskTaskCarriesRepoContext(t *testing.T) {
 	claimAndCheckLocalDir(t, runtimeID, projectID, "subtask")
 }
 
+// TestClaimGoalSubtaskResumesPriorSession locks the 断点续跑 path: when a goal
+// subtask is re-run (coordinator retry/reshape after a reject), claiming the new
+// task must surface the PRIOR session_id + work_dir from the node's earlier task
+// — on the same runtime — so the agent resumes its conversation instead of
+// starting from scratch. Goal subtasks key resume on goal_subtask_id (no issue
+// / chat FK).
+func TestClaimGoalSubtaskResumesPriorSession(t *testing.T) {
+	ctx := context.Background()
+	runtimeID := createClaimReclaimRuntime(t, ctx, "Subtask resume runtime")
+	agentID, _ := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Subtask resume agent")
+
+	var squadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'subtask-resume-squad', '', $2, $3) RETURNING id
+	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM squad WHERE id = $1`, squadID) })
+
+	var goalRunID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO goal_run (workspace_id, squad_id, creator_id, title, goal, status)
+		VALUES ($1, $2, $3, 'g', 'g', 'executing') RETURNING id
+	`, testWorkspaceID, squadID, testUserID).Scan(&goalRunID); err != nil {
+		t.Fatalf("create goal_run: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM goal_run WHERE id = $1`, goalRunID) })
+
+	var subtaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO goal_subtask (goal_run_id, seq, title, spec, status, kind)
+		VALUES ($1, 1, 'Engine', 'build it', 'ready', 'execute') RETURNING id
+	`, goalRunID).Scan(&subtaskID); err != nil {
+		t.Fatalf("create goal_subtask: %v", err)
+	}
+
+	// A PRIOR completed task for this subtask that established an agent session.
+	const priorSession = "sess-engine-prior-123"
+	const priorWorkDir = "/tmp/engine-workdir"
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, goal_subtask_id, status, priority, session_id, work_dir, completed_at)
+		VALUES ($1, $2, $3, 'completed', 5, $4, $5, now())
+	`, agentID, runtimeID, subtaskID, priorSession, priorWorkDir); err != nil {
+		t.Fatalf("create prior subtask task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE goal_subtask_id = $1`, subtaskID) })
+
+	// The re-run task (what a retry/reshape dispatch creates).
+	subCtx := service.GoalSubtaskContext{
+		Type:          service.GoalSubtaskContextType,
+		GoalRunID:     goalRunID,
+		GoalSubtaskID: subtaskID,
+		WorkspaceID:   testWorkspaceID,
+		GoalTitle:     "Ship onboarding",
+		SubtaskTitle:  "Engine",
+		Spec:          "build it",
+		Kind:          "execute",
+	}
+	ctxJSON, _ := json.Marshal(subCtx)
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, goal_subtask_id, status, priority, context)
+		VALUES ($1, $2, $3, 'queued', 5, $4)
+	`, agentID, runtimeID, subtaskID, ctxJSON); err != nil {
+		t.Fatalf("create rerun subtask task: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
+		testWorkspaceID, "subtask-resume")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("claim: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Task *struct {
+			PriorSessionID string `json:"prior_session_id"`
+			PriorWorkDir   string `json:"prior_work_dir"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode claim response: %v", err)
+	}
+	if resp.Task == nil {
+		t.Fatalf("no task in claim response: %s", w.Body.String())
+	}
+	if resp.Task.PriorSessionID != priorSession {
+		t.Fatalf("goal subtask re-run must resume the prior session %q, got %q", priorSession, resp.Task.PriorSessionID)
+	}
+	if resp.Task.PriorWorkDir != priorWorkDir {
+		t.Fatalf("goal subtask re-run must resume the prior work dir %q, got %q", priorWorkDir, resp.Task.PriorWorkDir)
+	}
+}
+
 // TestClaimDiscussionChatMarksGoalDiscussionActive verifies the discussion-phase
 // facilitation hookup: a chat task on a session bound to a goal_run in
 // 'discussion' status must claim with goal_discussion_active=true (so the chat

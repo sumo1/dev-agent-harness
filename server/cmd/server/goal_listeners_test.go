@@ -512,6 +512,83 @@ func TestGoalDecisionFailSafeBlocksOnAbandonedJudgment(t *testing.T) {
 	}
 }
 
+// TestGoalFailureNoAutoRetryAsksImmediately locks the "no hardcoded auto-retry"
+// policy: a node with attempts still left in its budget (max_attempts=3) that
+// fails ONCE must NOT be silently re-run by the backend. It goes straight to a
+// goal_decision task so the coordinator (LLM) decides — retry / reshape /
+// proceed / abort. The attempt budget is information for the coordinator, not a
+// blind backend retry gate.
+func TestGoalFailureNoAutoRetryAsksImmediately(t *testing.T) {
+	ctx := context.Background()
+	queries := db.New(testPool)
+	bus := events.New()
+	taskSvc := service.NewTaskService(queries, testPool, nil, bus)
+	goalSvc := service.NewGoalService(queries, testPool, bus, taskSvc)
+	registerGoalListeners(bus, goalSvc)
+
+	squadID, agentID := goalTestSquad(t, ctx, queries)
+	run, subtasks, err := goalSvc.CreateGoal(
+		ctx,
+		parseUUID(testWorkspaceID), squadID, parseUUID(testUserID),
+		pgtype.UUID{},
+		"No auto-retry goal", "a node fails once with budget left",
+		[]service.SubtaskSpec{
+			{Seq: 1, Title: "Flaky step", Spec: "fails once", AssigneeAgentID: agentID},
+			{Seq: 2, Title: "Downstream", Spec: "depends", AssigneeAgentID: agentID, DependsOn: []int32{1}},
+		},
+		true,
+	)
+	if err != nil {
+		t.Fatalf("CreateGoal: %v", err)
+	}
+	t.Cleanup(func() { _, _ = testPool.Exec(context.Background(), `DELETE FROM goal_run WHERE id = $1`, run.ID) })
+
+	var subA pgtype.UUID
+	for _, st := range subtasks {
+		if st.Seq == 1 {
+			subA = st.ID
+		}
+	}
+	// Plenty of budget left — the OLD code would have silently re-run here.
+	if _, err := testPool.Exec(ctx, `UPDATE goal_subtask SET max_attempts = 3 WHERE id = $1`, subA); err != nil {
+		t.Fatalf("set max_attempts: %v", err)
+	}
+
+	taskA := drainGoalSubtaskTask(t, ctx, queries, subA)
+	if _, err := taskSvc.FailTask(ctx, taskA.ID, "transient blip", "", "", "agent_error"); err != nil {
+		t.Fatalf("FailTask A: %v", err)
+	}
+
+	// A is terminally failed (NOT silently re-run), and a decision task is in flight.
+	assertSubtaskStatus(t, ctx, queries, subA, "failed")
+	if _, err := queries.GetActiveDecisionTaskForSubtask(ctx, util.UUIDToString(subA)); err != nil {
+		t.Fatalf("a failure with budget left must still ask the coordinator (no auto-retry), got no decision task: %v", err)
+	}
+
+	// And the decision context must carry the global DAG snapshot so the
+	// coordinator sees every node's state, not just the failed one.
+	var ctxRaw []byte
+	if err := testPool.QueryRow(ctx,
+		`SELECT context FROM agent_task_queue
+		   WHERE context::jsonb->>'type' = 'goal_decision'
+		     AND context::jsonb->>'goal_subtask_id' = $1::text
+		   ORDER BY created_at DESC LIMIT 1`,
+		util.UUIDToString(subA),
+	).Scan(&ctxRaw); err != nil {
+		t.Fatalf("load decision context: %v", err)
+	}
+	var dc service.GoalDecisionContext
+	if err := json.Unmarshal(ctxRaw, &dc); err != nil {
+		t.Fatalf("unmarshal decision context: %v", err)
+	}
+	if dc.Trigger != "failure" {
+		t.Fatalf("decision trigger should be 'failure', got %q", dc.Trigger)
+	}
+	if !strings.Contains(dc.DagSnapshot, "Flaky step") || !strings.Contains(dc.DagSnapshot, "Downstream") {
+		t.Fatalf("decision context must carry a global DAG snapshot of all nodes, got %q", dc.DagSnapshot)
+	}
+}
+
 // TestGoalDAGFailureBlocksWithoutCoordinator locks the fail-safe: when NO usable
 // coordinator exists (leader archived), a failure degrades to the original
 // behavior — block the downstream immediately, no judgment task, goal → failed.
