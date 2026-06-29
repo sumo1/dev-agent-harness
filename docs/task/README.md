@@ -63,7 +63,7 @@ docs/task/{task-id}/
 ## 当前任务索引
 
 <!-- 新任务在这里登记一行：- [{task-id}](./{task-id}/) — 一句话 -->
-- [260616-agent-harness-session-architecture](./260616-agent-harness-session-architecture/) — 将产品层从“所有东西塞进 Task”重分层为 WorkItem(kind: goal/issue/assistant) + AgentSession + RuntimeRun：统一上下文注入、命令按钮、中断/重试，让 Issue 默认走 direct session，并规划 OpenClaw 作为“龙虾”运行时通道和自动化来源接入。
+- [260616-agent-harness-session-architecture](./260616-agent-harness-session-architecture/) — ✅ **已合并 (2026-06-29)** - 将产品层从”所有东西塞进 Task”重分层为 WorkItem(kind: goal/issue/assistant) + AgentSession + RuntimeRun：统一上下文注入、命令按钮、中断/重试，让 Issue 默认走 direct session，并规划 OpenClaw 作为”龙虾”运行时通道和自动化来源接入。包含 S1-S8 完整实现和 E2E 验证。
 - [260615-runtime-skills-unified-entry](./260615-runtime-skills-unified-entry/) — 将 Configure/Skills 改为 Runtime Skill Hub：按 Claude Code、Codex 等运行时查看本地 skills，查看 bundle 详情，并支持 workspace skill 一键同步安装到各运行时。
 - [260615-working-dirs-simplify](./260615-working-dirs-simplify/) — 把「项目」精简为轻量「工作目录」配置（Configure 区独立页：名字+本地目录(路径+daemon)+可选 git，1:1）。零迁移，底层仍 CRUD project+project_resource；daemon/autofix/worktree 零改动。
 - [260612-issue-github-autofix](./260612-issue-github-autofix/) — Issue 录入（粘贴图片+一段话）→ 推 GitHub Issue → 自动修复运行（worktree 改代码 + E2E 验证 + 出 PR）→ 三态可视 → 点 issue 跳助理会话。GitHub 写全走 agent 子任务（server 不碰 GitHub API）。**本轮只整理需求+拆解，未执行**。

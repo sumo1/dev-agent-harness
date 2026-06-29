@@ -95,10 +95,52 @@ git cherry-pick f3d490684
 3. **WIP 提交规范**：工作进行中的 worktree 应定期提交或 stash，避免删除时丢失工作
 4. **dogfood worktree 命名**：已有规范 `.dogfood-worktrees/{feature-name}-{timestamp}`，继续遵守
 
+## 后续合并
+
+### OpenClaw/Lobster 分支合并到 main (2026-06-29)
+
+在清理 worktree 后，将 OpenClaw 相关功能合并到 main：
+
+**合并提交**: 34ecd1ba4 - "Merge OpenClaw/lobster runtime and agent session architecture"
+
+**来源分支**: `codex/dogfood-agent-harness-session-architecture-20260616-160317` @ f3d490684
+
+**新增功能**:
+- OpenClaw 通道集成（`packages/core/channels/`）
+  - `openclaw.ts` - 核心通道实现
+  - `openclaw-queries.ts` - 查询接口
+  - `openclaw-mutations.ts` - 变更接口
+- Agent 会话架构（`packages/core/session-commands/`）
+  - 统一会话命令注册
+  - 命令类型系统
+- Lobster 运行时页面（`packages/views/lobster/`）
+  - `lobster-page.tsx` - 龙虾运行时主页面
+  - 国际化支持（en/ja/ko/zh-Hans）
+- Agent 会话面板（`packages/views/common/agent-session/`）
+  - `agent-session-panel.tsx` - 通用会话面板
+  - `command-bar.tsx` - 命令栏组件
+  - `context-bar.tsx` - 上下文栏组件
+- 后端支持
+  - `server/internal/handler/openclaw_channel.go` - OpenClaw 处理器
+  - `server/internal/handler/openclaw_channel_test.go` - 测试
+- UI 集成
+  - Sidebar 添加"龙虾"入口（Shell 图标）
+  - 桌面端和 Web 端路由配置
+
+**解决的冲突**:
+- `.computer-use/traces/last` - 保留 HEAD 版本（最新 trace 指针）
+- `docs/task/260616-agent-harness-session-architecture/breakdown.md` - 保留分支版本（包含 S8 E2E 验证步骤）
+- `docs/task/260616-agent-harness-session-architecture/design.md` - 保留分支版本（完整设计文档）
+
+**任务状态更新**:
+- `docs/task/README.md` 中将 260616 任务标记为"✅ 已合并 (2026-06-29)"
+
 ## 影响评估
 
 - ✅ 主工作树干净，无遗留修改
-- ✅ 所有重要功能代码已在 main 或分支中保留
-- ✅ 实验性功能（lobster、OpenClaw）的提交历史已保存
+- ✅ 所有重要功能代码已合并到 main
+- ✅ OpenClaw/Lobster 运行时通道已集成
+- ✅ Agent 会话架构重分层已完成（S1-S8）
 - ✅ 孤立历史分支的内容已在 main 中以更新形式存在
+- ✅ 任务文档已更新状态
 - ⚠️ 如果有依赖这些 worktree 的本地脚本或配置，需要更新路径
