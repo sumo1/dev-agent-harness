@@ -28,25 +28,25 @@ import (
 
 // IssueResponse is the JSON response for an issue.
 type IssueResponse struct {
-	ID            string                  `json:"id"`
-	WorkspaceID   string                  `json:"workspace_id"`
-	Number        int32                   `json:"number"`
-	Identifier    string                  `json:"identifier"`
-	Title         string                  `json:"title"`
-	Description   *string                 `json:"description"`
-	Status        string                  `json:"status"`
-	Priority      string                  `json:"priority"`
-	AssigneeType  *string                 `json:"assignee_type"`
-	AssigneeID    *string                 `json:"assignee_id"`
-	CreatorType   string                  `json:"creator_type"`
-	CreatorID     string                  `json:"creator_id"`
-	ParentIssueID *string                 `json:"parent_issue_id"`
-	ProjectID     *string                 `json:"project_id"`
-	Position      float64                 `json:"position"`
-	StartDate     *string                 `json:"start_date"`
-	DueDate       *string                 `json:"due_date"`
-	CreatedAt     string                  `json:"created_at"`
-	UpdatedAt     string                  `json:"updated_at"`
+	ID            string  `json:"id"`
+	WorkspaceID   string  `json:"workspace_id"`
+	Number        int32   `json:"number"`
+	Identifier    string  `json:"identifier"`
+	Title         string  `json:"title"`
+	Description   *string `json:"description"`
+	Status        string  `json:"status"`
+	Priority      string  `json:"priority"`
+	AssigneeType  *string `json:"assignee_type"`
+	AssigneeID    *string `json:"assignee_id"`
+	CreatorType   string  `json:"creator_type"`
+	CreatorID     string  `json:"creator_id"`
+	ParentIssueID *string `json:"parent_issue_id"`
+	ProjectID     *string `json:"project_id"`
+	Position      float64 `json:"position"`
+	StartDate     *string `json:"start_date"`
+	DueDate       *string `json:"due_date"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 	// Metadata is the per-issue KV map (see issue_metadata.go). Always emitted
 	// (empty object when unset) so frontend code can `issue.metadata[key]`
 	// without nil-guarding the parent field.
@@ -199,10 +199,10 @@ func assigneeGroupID(assigneeType pgtype.Text, assigneeID pgtype.UUID) string {
 // SearchIssueResponse extends IssueResponse with search metadata.
 type SearchIssueResponse struct {
 	IssueResponse
-	MatchSource                string  `json:"match_source"`
-	MatchedSnippet             *string `json:"matched_snippet,omitempty"`
-	MatchedDescriptionSnippet  *string `json:"matched_description_snippet,omitempty"`
-	MatchedCommentSnippet      *string `json:"matched_comment_snippet,omitempty"`
+	MatchSource               string  `json:"match_source"`
+	MatchedSnippet            *string `json:"matched_snippet,omitempty"`
+	MatchedDescriptionSnippet *string `json:"matched_description_snippet,omitempty"`
+	MatchedCommentSnippet     *string `json:"matched_comment_snippet,omitempty"`
 }
 
 // extractSnippet extracts a snippet of text around the first occurrence of query.
@@ -2270,49 +2270,13 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Auto-fix: a project-bound issue spawns a goal_run that plans the
-	// file-issue → fix → verify → open-PR DAG. Fail-soft — the issue is already
-	// created; if no PMO is configured or planning dispatch fails, autofix simply
-	// does not start (the frontend shows "未启动") and no error surfaces here.
-	h.maybeStartAutofix(r.Context(), issue)
-
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-// maybeStartAutofix kicks off the auto-fix goal_run and links it back to the
-// issue metadata. The gate (GoalService.ShouldAutofixIssue) is the single source
-// of truth — the cheap "issue bound to a project" check; planner availability is
-// decided inside StartAutofixGoalRun. Every failure path is silent (logged, not
-// returned): the issue creation already succeeded and must not be rolled back by
-// an autofix that could not start (design §4 risk 2).
-func (h *Handler) maybeStartAutofix(ctx context.Context, issue db.Issue) {
-	if !h.GoalService.ShouldAutofixIssue(issue) {
-		return
-	}
-
-	run, err := h.GoalService.StartAutofixGoalRun(ctx, issue)
-	if err != nil {
-		slog.Info("autofix did not start",
-			"issue_id", uuidToString(issue.ID),
-			"reason", err.Error(),
-		)
-		return
-	}
-
-	if err := h.GoalService.LinkAutofixGoalRun(ctx, issue, run.ID); err != nil {
-		slog.Error("autofix: link goal run to issue metadata",
-			"issue_id", uuidToString(issue.ID),
-			"goal_run_id", uuidToString(run.ID),
-			"error", err,
-		)
-	}
-}
-
 // StartAutofix is the MANUAL trigger for an existing issue's auto-fix flow
-// (POST /api/issues/{id}/autofix), the counterpart to the create-time
-// maybeStartAutofix. Unlike that fail-soft path, this one is user-initiated, so
-// failures are returned (not swallowed): the user clicked "启动修复" and deserves
-// to know why nothing happened. Reuses the same gate + start + link primitives.
+// (POST /api/issues/{id}/autofix). Issue creation stays a direct issue session;
+// this endpoint is the explicit "upgrade to a complex Goal workflow" command.
+// Because it is user-initiated, failures are returned instead of swallowed.
 func (h *Handler) StartAutofix(w http.ResponseWriter, r *http.Request) {
 	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
 	if !ok {

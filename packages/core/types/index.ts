@@ -66,6 +66,8 @@ export type * from "./events";
 export type * from "./api";
 export type { Attachment } from "./attachment";
 export type { ChatSession, ChatMessage, ChatPendingTask, PendingChatTaskItem, PendingChatTasksResponse, SendChatMessageResponse } from "./chat";
+export type * from "./agent-session";
+export type * from "./openclaw-channel";
 export type { GoalRun, GoalSubtask, GoalRunStatus, GoalSubtaskStatus, GoalSubtaskKind, GoalVerdict, TaskCreateResult, RoleSyncResult } from "./goal";
 export type { StorageAdapter } from "./storage";
 export type {

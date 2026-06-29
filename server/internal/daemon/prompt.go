@@ -15,6 +15,10 @@ import (
 // lightweight inline template (or Windows file for any provider on
 // Windows).
 func BuildPrompt(task Task, provider string) string {
+	return prependRuntimeContext(task, provider, buildPromptBody(task, provider))
+}
+
+func buildPromptBody(task Task, provider string) string {
 	if task.ChatSessionID != "" {
 		return buildChatPrompt(task)
 	}
@@ -48,6 +52,81 @@ func BuildPrompt(task Task, provider string) string {
 	fmt.Fprintf(&b, "Start by running `multica issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
 	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (assignment-triggered tasks treat the read as mandatory). `multica issue comment list %s --output json` returns all comments for the issue (server caps at 2000). On long-running issues use `--recent 20 --output json` to read the 20 most recently active threads, then page older threads via the stderr `Next thread cursor: ...` line and the matching `--before` / `--before-id` until you have enough history. `--since <RFC3339>` is still available for incremental polling and may combine with `--recent`.\n", task.IssueID)
 	return b.String()
+}
+
+func prependRuntimeContext(task Task, provider, prompt string) string {
+	kind, workItemID, title, description, ok := runtimeContextWorkItem(task)
+	if !ok {
+		return prompt
+	}
+
+	var b strings.Builder
+	b.WriteString("<runtime_context>\n")
+	fmt.Fprintf(&b, "work_item_kind: %s\n", kind)
+	if workItemID != "" {
+		fmt.Fprintf(&b, "work_item_id: %s\n", workItemID)
+	}
+	if title != "" {
+		fmt.Fprintf(&b, "work_item_title: %s\n", title)
+	}
+	if description != "" {
+		fmt.Fprintf(&b, "work_item_description: %s\n", description)
+	}
+	if task.WorkspaceID != "" {
+		fmt.Fprintf(&b, "workspace_id: %s\n", task.WorkspaceID)
+	}
+	if task.ProjectID != "" {
+		fmt.Fprintf(&b, "project_id: %s\n", task.ProjectID)
+	}
+	if task.ProjectTitle != "" {
+		fmt.Fprintf(&b, "project_title: %s\n", task.ProjectTitle)
+	}
+	if task.RuntimeID != "" {
+		fmt.Fprintf(&b, "runtime_id: %s\n", task.RuntimeID)
+	}
+	if provider != "" {
+		fmt.Fprintf(&b, "runtime_provider: %s\n", provider)
+	}
+	if task.AgentID != "" {
+		fmt.Fprintf(&b, "agent_id: %s\n", task.AgentID)
+	}
+	if task.Agent != nil && task.Agent.Name != "" {
+		fmt.Fprintf(&b, "agent_name: %s\n", task.Agent.Name)
+	}
+	if task.ID != "" {
+		fmt.Fprintf(&b, "task_queue_job_id: %s\n", task.ID)
+	}
+	if task.ChatSessionID != "" {
+		fmt.Fprintf(&b, "chat_session_id: %s\n", task.ChatSessionID)
+	}
+	b.WriteString("</runtime_context>\n\n")
+	b.WriteString(prompt)
+	return b.String()
+}
+
+func runtimeContextWorkItem(task Task) (kind, id, title, description string, ok bool) {
+	switch {
+	case task.GoalPlanningRunID != "":
+		return "goal", task.GoalPlanningRunID, task.GoalTitle, task.GoalPlanningGoal, true
+	case task.GoalSummaryRunID != "":
+		return "goal", task.GoalSummaryRunID, task.GoalTitle, task.GoalSummaryGoal, true
+	case task.GoalPersistRunID != "":
+		return "goal", task.GoalPersistRunID, task.GoalTitle, task.GoalPersistGoal, true
+	case task.GoalDecisionSubtaskID != "":
+		return "goal", task.GoalDecisionSubtaskID, task.GoalDecisionSubtaskTitle, task.GoalDecisionSubtaskSpec, true
+	case task.GoalSubtaskID != "":
+		return "goal", task.GoalSubtaskID, task.GoalSubtaskTitle, task.GoalSubtaskSpec, true
+	case task.GoalDiscussionActive:
+		return "goal", task.ChatSessionID, task.GoalDiscussionTitle, task.GoalDiscussionGoal, true
+	case task.GoalContextTitle != "" || strings.TrimSpace(task.GoalContextGoal) != "":
+		return "goal", task.ChatSessionID, task.GoalContextTitle, task.GoalContextGoal, true
+	case task.ChatSessionID != "":
+		return "assistant", task.ChatSessionID, "", task.ChatMessage, true
+	case task.IssueID != "":
+		return "issue", task.IssueID, "", "", true
+	default:
+		return "", "", "", "", false
+	}
 }
 
 // buildGoalPlanningPrompt constructs the prompt for the squad leader (PMO) to

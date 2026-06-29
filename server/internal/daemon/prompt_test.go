@@ -5,6 +5,74 @@ import (
 	"testing"
 )
 
+func TestBuildPromptInjectsRuntimeContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		task Task
+		want []string
+	}{
+		{
+			name: "issue",
+			task: Task{
+				ID:          "task-issue",
+				IssueID:     "issue-1",
+				WorkspaceID: "workspace-1",
+				RuntimeID:   "runtime-1",
+			},
+			want: []string{
+				"<runtime_context>",
+				"work_item_kind: issue",
+				"work_item_id: issue-1",
+				"workspace_id: workspace-1",
+				"runtime_id: runtime-1",
+				"runtime_provider: codex",
+				"task_queue_job_id: task-issue",
+			},
+		},
+		{
+			name: "goal",
+			task: Task{
+				GoalPlanningRunID: "goal-1",
+				GoalTitle:         "Ship session model",
+				GoalPlanningGoal:  "Unify agent sessions",
+			},
+			want: []string{
+				"work_item_kind: goal",
+				"work_item_id: goal-1",
+				"work_item_title: Ship session model",
+				"work_item_description: Unify agent sessions",
+			},
+		},
+		{
+			name: "assistant",
+			task: Task{
+				ChatSessionID: "chat-1",
+				ChatMessage:   "Please retry with more context.",
+			},
+			want: []string{
+				"work_item_kind: assistant",
+				"work_item_id: chat-1",
+				"work_item_description: Please retry with more context.",
+				"chat_session_id: chat-1",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := BuildPrompt(tt.task, "codex")
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("prompt missing %q\n--- output ---\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
 // quick-create agent is allowed to translate raw user input into the issue
 // description body. Each substring corresponds to a concrete failure mode

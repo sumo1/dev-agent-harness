@@ -57,6 +57,7 @@ function workspaceScoped(slug: string) {
     inbox: () => `${ws}/inbox`,
     myIssues: () => `${ws}/my-issues`,
     assistant: (locator: AssistantLocator = {}) => `${ws}/assistant${assistantQuery(locator)}`,
+    lobster: () => `${ws}/lobster`,
     tasks: () => `${ws}/tasks`,
     runtimes: () => `${ws}/runtimes`,
     runtimeDetail: (id: string) => `${ws}/runtimes/${encode(id)}`,

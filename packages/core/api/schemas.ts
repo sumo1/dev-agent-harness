@@ -12,6 +12,13 @@ import type {
   BillingTransactionsPage,
   ChatSession,
   GoalRun,
+  OpenClawAutomationCommandResponse,
+  OpenClawAutomationListResponse,
+  OpenClawChannelStatus,
+  OpenClawConversationDetail,
+  OpenClawConversationListResponse,
+  OpenClawDispatchResponse,
+  OpenClawSendMessageResponse,
   TaskCreateResult,
   RoleSyncResult,
   CreateAgentFromTemplateResponse,
@@ -175,6 +182,153 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   daemon_server_url: "",
   daemon_app_url: "",
   workspace_creation_disabled: false,
+};
+
+const NullableStringDefaultNullSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value : null),
+  z.string().nullable(),
+);
+
+const OpenClawCapabilitiesSchema = z.object({
+  conversations: z.boolean().default(false),
+  automations: z.boolean().default(false),
+  native_write: z.boolean().default(false),
+}).loose();
+
+export const OpenClawChannelStatusSchema = z.object({
+  provider: z.literal("openclaw").default("openclaw"),
+  display_name: z.string().default("OpenClaw"),
+  status: z.string().default("disconnected"),
+  executable_path: NullableStringDefaultNullSchema,
+  version: NullableStringDefaultNullSchema,
+  runtime_id: NullableStringDefaultNullSchema,
+  last_synced_at: NullableStringDefaultNullSchema,
+  last_error: NullableStringDefaultNullSchema,
+  capabilities: OpenClawCapabilitiesSchema.default({
+    conversations: false,
+    automations: false,
+    native_write: false,
+  }),
+}).loose();
+
+export const EMPTY_OPENCLAW_CHANNEL_STATUS: OpenClawChannelStatus = {
+  provider: "openclaw",
+  display_name: "OpenClaw",
+  status: "disconnected",
+  executable_path: null,
+  version: null,
+  runtime_id: null,
+  last_synced_at: null,
+  last_error: null,
+  capabilities: {
+    conversations: false,
+    automations: false,
+    native_write: false,
+  },
+};
+
+const OpenClawConversationSummarySchema = z.object({
+  id: z.string(),
+  title: z.string().default("OpenClaw conversation"),
+  status: z.string().default("unknown"),
+  last_message_preview: NullableStringDefaultNullSchema,
+  message_count: z.number().default(0),
+  updated_at: NullableStringDefaultNullSchema,
+  external_url: NullableStringDefaultNullSchema.optional(),
+}).loose();
+
+const OpenClawConversationMessageSchema = z.object({
+  id: z.string(),
+  role: z.string().default("assistant"),
+  content: z.string().default(""),
+  created_at: NullableStringDefaultNullSchema,
+}).loose();
+
+export const OpenClawConversationDetailSchema = OpenClawConversationSummarySchema.extend({
+  messages: z.array(OpenClawConversationMessageSchema).default([]),
+}).loose();
+
+export const EMPTY_OPENCLAW_CONVERSATION_DETAIL: OpenClawConversationDetail = {
+  id: "",
+  title: "OpenClaw conversation",
+  status: "unknown",
+  last_message_preview: null,
+  message_count: 0,
+  updated_at: null,
+  external_url: null,
+  messages: [],
+};
+
+export const OpenClawConversationListResponseSchema = z.object({
+  conversations: z.array(OpenClawConversationSummarySchema).default([]),
+  last_synced_at: NullableStringDefaultNullSchema,
+  last_error: NullableStringDefaultNullSchema,
+}).loose();
+
+export const EMPTY_OPENCLAW_CONVERSATION_LIST: OpenClawConversationListResponse = {
+  conversations: [],
+  last_synced_at: null,
+  last_error: null,
+};
+
+export const OpenClawSendMessageResponseSchema = z.object({
+  conversation: OpenClawConversationDetailSchema,
+}).loose();
+
+export const EMPTY_OPENCLAW_SEND_MESSAGE_RESPONSE: OpenClawSendMessageResponse = {
+  conversation: EMPTY_OPENCLAW_CONVERSATION_DETAIL,
+};
+
+export const OpenClawDispatchResponseSchema = z.object({
+  target: z.string().default("assistant"),
+  status: z.string().default("unsupported"),
+  id: NullableStringDefaultNullSchema,
+  path: NullableStringDefaultNullSchema,
+  message: z.string().default("OpenClaw dispatch is not available."),
+}).loose();
+
+export const EMPTY_OPENCLAW_DISPATCH_RESPONSE: OpenClawDispatchResponse = {
+  target: "assistant",
+  status: "unsupported",
+  id: null,
+  path: null,
+  message: "OpenClaw dispatch is not available.",
+};
+
+const OpenClawAutomationSchema = z.object({
+  id: z.string(),
+  title: z.string().default("OpenClaw automation"),
+  schedule: NullableStringDefaultNullSchema,
+  status: z.string().default("unknown"),
+  last_run_at: NullableStringDefaultNullSchema,
+  next_run_at: NullableStringDefaultNullSchema,
+  external_url: NullableStringDefaultNullSchema.optional(),
+}).loose();
+
+export const OpenClawAutomationListResponseSchema = z.object({
+  automations: z.array(OpenClawAutomationSchema).default([]),
+  last_synced_at: NullableStringDefaultNullSchema,
+  last_error: NullableStringDefaultNullSchema,
+}).loose();
+
+export const EMPTY_OPENCLAW_AUTOMATION_LIST: OpenClawAutomationListResponse = {
+  automations: [],
+  last_synced_at: null,
+  last_error: null,
+};
+
+export const OpenClawAutomationCommandResponseSchema = z.object({
+  automation_id: z.string().default(""),
+  command: z.string().default("pause"),
+  status: z.string().default("unsupported"),
+  message: z.string().default("OpenClaw automation command is not available."),
+}).loose();
+
+export const EMPTY_OPENCLAW_AUTOMATION_COMMAND_RESPONSE: OpenClawAutomationCommandResponse = {
+  automation_id: "",
+  command: "pause",
+  status: "unsupported",
+  message: "OpenClaw automation command is not available.",
 };
 
 export const CommentSchema = z.object({

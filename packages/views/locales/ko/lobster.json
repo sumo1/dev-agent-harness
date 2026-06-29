@@ -1,0 +1,43 @@
+{
+  "page": {
+    "title": "로브스터",
+    "subtitle": "OpenClaw 채널",
+    "sync": "동기화",
+    "connected": "연결됨",
+    "disconnected": "연결 안 됨",
+    "error": "오류",
+    "runtime": "런타임",
+    "not_registered": "이 워크스페이스에 OpenClaw 런타임이 없습니다",
+    "native_unavailable": "이 머신에서 OpenClaw CLI를 사용할 수 없습니다."
+  },
+  "sections": {
+    "conversations": "대화",
+    "conversation_detail": "대화 상세",
+    "dispatch": "디스패치",
+    "automations": "자동화"
+  },
+  "empty": {
+    "conversations": "OpenClaw 대화가 없습니다.",
+    "select_conversation": "대화를 선택해 메시지를 확인하세요.",
+    "automations": "OpenClaw 자동화가 없습니다."
+  },
+  "actions": {
+    "dispatch_goal": "목표",
+    "dispatch_issue": "Issue",
+    "continue_assistant": "어시스턴트",
+    "send": "보내기",
+    "pause": "일시 중지",
+    "resume": "재개",
+    "delete": "삭제"
+  },
+  "fields": {
+    "instructions": "지시",
+    "message": "메시지"
+  },
+  "automations": {
+    "channel": "로브스터 채널",
+    "schedule_empty": "일정 없음",
+    "last_run_empty": "실행 기록 없음",
+    "next_run_empty": "예약 없음"
+  }
+}

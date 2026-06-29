@@ -1,0 +1,43 @@
+{
+  "page": {
+    "title": "Lobster",
+    "subtitle": "OpenClaw channel",
+    "sync": "Sync",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "error": "Error",
+    "runtime": "Runtime",
+    "not_registered": "No OpenClaw runtime registered",
+    "native_unavailable": "OpenClaw CLI is not available on this machine."
+  },
+  "sections": {
+    "conversations": "Conversations",
+    "conversation_detail": "Conversation detail",
+    "dispatch": "Dispatch",
+    "automations": "Automations"
+  },
+  "empty": {
+    "conversations": "No OpenClaw conversations found.",
+    "select_conversation": "Select a conversation to inspect its messages.",
+    "automations": "No OpenClaw automations found."
+  },
+  "actions": {
+    "dispatch_goal": "Goal",
+    "dispatch_issue": "Issue",
+    "continue_assistant": "Assistant",
+    "send": "Send",
+    "pause": "Pause",
+    "resume": "Resume",
+    "delete": "Delete"
+  },
+  "fields": {
+    "instructions": "Instructions",
+    "message": "Message"
+  },
+  "automations": {
+    "channel": "Lobster channel",
+    "schedule_empty": "No schedule",
+    "last_run_empty": "Never",
+    "next_run_empty": "Not scheduled"
+  }
+}

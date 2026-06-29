@@ -1,0 +1,43 @@
+{
+  "page": {
+    "title": "ロブスター",
+    "subtitle": "OpenClaw チャンネル",
+    "sync": "同期",
+    "connected": "接続済み",
+    "disconnected": "未接続",
+    "error": "エラー",
+    "runtime": "ランタイム",
+    "not_registered": "このワークスペースに OpenClaw ランタイムがありません",
+    "native_unavailable": "このマシンで OpenClaw CLI を利用できません。"
+  },
+  "sections": {
+    "conversations": "会話",
+    "conversation_detail": "会話詳細",
+    "dispatch": "ディスパッチ",
+    "automations": "自動化"
+  },
+  "empty": {
+    "conversations": "OpenClaw の会話はありません。",
+    "select_conversation": "会話を選択してメッセージを確認します。",
+    "automations": "OpenClaw の自動化はありません。"
+  },
+  "actions": {
+    "dispatch_goal": "ゴール",
+    "dispatch_issue": "Issue",
+    "continue_assistant": "アシスタント",
+    "send": "送信",
+    "pause": "一時停止",
+    "resume": "再開",
+    "delete": "削除"
+  },
+  "fields": {
+    "instructions": "指示",
+    "message": "メッセージ"
+  },
+  "automations": {
+    "channel": "ロブスター チャンネル",
+    "schedule_empty": "スケジュールなし",
+    "last_run_empty": "未実行",
+    "next_run_empty": "未設定"
+  }
+}
