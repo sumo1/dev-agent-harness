@@ -33,6 +33,7 @@ import {
   Target,
   ListTodo,
   FolderGit,
+  Shell,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
@@ -113,6 +114,7 @@ type NavKey =
   | "usage"
   | "tasks"
   | "assistant"
+  | "lobster"
   | "runtimes"
   | "skills"
   | "settings";
@@ -131,6 +133,7 @@ type NavLabelKey =
   | "usage"
   | "tasks"
   | "assistant"
+  | "lobster"
   | "runtimes"
   | "skills"
   | "settings";
@@ -149,6 +152,7 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "issues", labelKey: "issues", icon: ListTodo },
   { key: "agents", labelKey: "roles", icon: Bot },
   { key: "assistant", labelKey: "assistant", icon: MessageSquare },
+  { key: "lobster", labelKey: "lobster", icon: Shell },
   { key: "autopilots", labelKey: "autopilots", icon: Zap },
   { key: "usage", labelKey: "usage", icon: BarChart3 },
 ];

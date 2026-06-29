@@ -22,6 +22,7 @@ import type workingDirs from "../locales/en/working-dirs.json";
 import type autopilots from "../locales/en/autopilots.json";
 import type skills from "../locales/en/skills.json";
 import type chat from "../locales/en/chat.json";
+import type lobster from "../locales/en/lobster.json";
 import type modals from "../locales/en/modals.json";
 import type runtimes from "../locales/en/runtimes.json";
 import type layout from "../locales/en/layout.json";
@@ -64,6 +65,7 @@ declare global {
     autopilots: typeof autopilots;
     skills: typeof skills;
     chat: typeof chat;
+    lobster: typeof lobster;
     modals: typeof modals;
     runtimes: typeof runtimes;
     layout: typeof layout;

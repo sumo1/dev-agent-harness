@@ -1,0 +1,43 @@
+{
+  "page": {
+    "title": "龙虾",
+    "subtitle": "OpenClaw 通道",
+    "sync": "同步",
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "error": "异常",
+    "runtime": "运行时",
+    "not_registered": "当前工作区没有注册 OpenClaw 运行时",
+    "native_unavailable": "本机没有可用的 OpenClaw CLI。"
+  },
+  "sections": {
+    "conversations": "对话",
+    "conversation_detail": "对话详情",
+    "dispatch": "分发",
+    "automations": "自动化"
+  },
+  "empty": {
+    "conversations": "没有找到 OpenClaw 对话。",
+    "select_conversation": "选择一个对话查看消息。",
+    "automations": "没有找到 OpenClaw 自动化。"
+  },
+  "actions": {
+    "dispatch_goal": "任务",
+    "dispatch_issue": "Issue",
+    "continue_assistant": "助理",
+    "send": "发送",
+    "pause": "暂停",
+    "resume": "恢复",
+    "delete": "删除"
+  },
+  "fields": {
+    "instructions": "补充指令",
+    "message": "消息"
+  },
+  "automations": {
+    "channel": "龙虾频道",
+    "schedule_empty": "无计划",
+    "last_run_empty": "从未运行",
+    "next_run_empty": "未计划"
+  }
+}

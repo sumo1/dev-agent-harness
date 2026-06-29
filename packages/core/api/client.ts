@@ -114,6 +114,15 @@ import type {
   CreateBillingCheckoutSessionResponse,
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
+  OpenClawAutomationCommand,
+  OpenClawAutomationCommandResponse,
+  OpenClawAutomationListResponse,
+  OpenClawChannelStatus,
+  OpenClawConversationDetail,
+  OpenClawConversationListResponse,
+  OpenClawDispatchRequest,
+  OpenClawDispatchResponse,
+  OpenClawSendMessageResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -197,6 +206,20 @@ import {
   EMPTY_CREATE_BILLING_CHECKOUT_SESSION_RESPONSE,
   EMPTY_BILLING_CHECKOUT_SESSION_STATUS,
   EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE,
+  EMPTY_OPENCLAW_AUTOMATION_COMMAND_RESPONSE,
+  EMPTY_OPENCLAW_AUTOMATION_LIST,
+  EMPTY_OPENCLAW_CHANNEL_STATUS,
+  EMPTY_OPENCLAW_CONVERSATION_DETAIL,
+  EMPTY_OPENCLAW_CONVERSATION_LIST,
+  EMPTY_OPENCLAW_DISPATCH_RESPONSE,
+  EMPTY_OPENCLAW_SEND_MESSAGE_RESPONSE,
+  OpenClawAutomationCommandResponseSchema,
+  OpenClawAutomationListResponseSchema,
+  OpenClawChannelStatusSchema,
+  OpenClawConversationDetailSchema,
+  OpenClawConversationListResponseSchema,
+  OpenClawDispatchResponseSchema,
+  OpenClawSendMessageResponseSchema,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1330,8 +1353,12 @@ export class ApiClient {
     });
   }
 
-  /** Manually start the auto-fix flow for an existing issue (the "启动修复"
-   *  action). 400s when the issue isn't project-bound + agent-assigned. */
+  async startIssueSession(issueId: string): Promise<AgentTask> {
+    return this.fetch(`/api/issues/${issueId}/run`, { method: "POST" });
+  }
+
+  /** Explicitly upgrade an issue into the complex auto-fix Goal workflow.
+   *  Direct issue runs use rerunIssue instead. */
   async startAutofix(issueId: string): Promise<{ goal_run_id: string }> {
     return this.fetch(`/api/issues/${issueId}/autofix`, { method: "POST" });
   }
@@ -1845,6 +1872,84 @@ export class ApiClient {
 
   async markChatSessionRead(sessionId: string): Promise<void> {
     await this.fetch(`/api/chat/sessions/${sessionId}/read`, { method: "POST" });
+  }
+
+  // OpenClaw channel surface
+  async getOpenClawChannelStatus(): Promise<OpenClawChannelStatus> {
+    const raw = await this.fetch<unknown>("/api/channels/openclaw/status");
+    return parseWithFallback(raw, OpenClawChannelStatusSchema, EMPTY_OPENCLAW_CHANNEL_STATUS, {
+      endpoint: "GET /api/channels/openclaw/status",
+    });
+  }
+
+  async listOpenClawConversations(): Promise<OpenClawConversationListResponse> {
+    const raw = await this.fetch<unknown>("/api/channels/openclaw/conversations");
+    return parseWithFallback(raw, OpenClawConversationListResponseSchema, EMPTY_OPENCLAW_CONVERSATION_LIST, {
+      endpoint: "GET /api/channels/openclaw/conversations",
+    });
+  }
+
+  async getOpenClawConversation(id: string): Promise<OpenClawConversationDetail> {
+    const raw = await this.fetch<unknown>(`/api/channels/openclaw/conversations/${encodeURIComponent(id)}`);
+    return parseWithFallback(raw, OpenClawConversationDetailSchema, EMPTY_OPENCLAW_CONVERSATION_DETAIL, {
+      endpoint: "GET /api/channels/openclaw/conversations/{id}",
+    });
+  }
+
+  async sendOpenClawConversationMessage(
+    id: string,
+    message: string,
+  ): Promise<OpenClawSendMessageResponse> {
+    const raw = await this.fetch<unknown>(`/api/channels/openclaw/conversations/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+    return parseWithFallback(raw, OpenClawSendMessageResponseSchema, EMPTY_OPENCLAW_SEND_MESSAGE_RESPONSE, {
+      endpoint: "POST /api/channels/openclaw/conversations/{id}/messages",
+    });
+  }
+
+  async dispatchOpenClawConversation(
+    id: string,
+    data: OpenClawDispatchRequest,
+  ): Promise<OpenClawDispatchResponse> {
+    const raw = await this.fetch<unknown>(`/api/channels/openclaw/conversations/${encodeURIComponent(id)}/dispatch`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, OpenClawDispatchResponseSchema, EMPTY_OPENCLAW_DISPATCH_RESPONSE, {
+      endpoint: "POST /api/channels/openclaw/conversations/{id}/dispatch",
+    });
+  }
+
+  async listOpenClawAutomations(): Promise<OpenClawAutomationListResponse> {
+    const raw = await this.fetch<unknown>("/api/channels/openclaw/automations");
+    return parseWithFallback(raw, OpenClawAutomationListResponseSchema, EMPTY_OPENCLAW_AUTOMATION_LIST, {
+      endpoint: "GET /api/channels/openclaw/automations",
+    });
+  }
+
+  async syncOpenClawAutomations(): Promise<OpenClawAutomationListResponse> {
+    const raw = await this.fetch<unknown>("/api/channels/openclaw/automations/sync", { method: "POST" });
+    return parseWithFallback(raw, OpenClawAutomationListResponseSchema, EMPTY_OPENCLAW_AUTOMATION_LIST, {
+      endpoint: "POST /api/channels/openclaw/automations/sync",
+    });
+  }
+
+  async runOpenClawAutomationCommand(
+    id: string,
+    command: OpenClawAutomationCommand,
+  ): Promise<OpenClawAutomationCommandResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/channels/openclaw/automations/${encodeURIComponent(id)}/commands/${encodeURIComponent(command)}`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      OpenClawAutomationCommandResponseSchema,
+      EMPTY_OPENCLAW_AUTOMATION_COMMAND_RESPONSE,
+      { endpoint: "POST /api/channels/openclaw/automations/{id}/commands/{command}" },
+    );
   }
 
   async cancelTaskById(taskId: string): Promise<void> {

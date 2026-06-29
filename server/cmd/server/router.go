@@ -465,6 +465,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/active-task", h.GetActiveTaskForIssue)
 					r.Post("/tasks/{taskId}/cancel", h.CancelTask)
 					r.Post("/autofix", h.StartAutofix)
+					r.Post("/run", h.RerunIssue)
 					r.Post("/rerun", h.RerunIssue)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/usage", h.GetIssueUsage)
@@ -750,6 +751,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
+
+			// External channel surfaces. OpenClaw is a runtime provider and
+			// channel provider; it is intentionally not a fourth WorkItem kind.
+			r.Route("/api/channels/openclaw", func(r chi.Router) {
+				r.Get("/status", h.GetOpenClawChannelStatus)
+				r.Get("/conversations", h.ListOpenClawConversations)
+				r.Route("/conversations/{conversationId}", func(r chi.Router) {
+					r.Get("/", h.GetOpenClawConversation)
+					r.Post("/messages", h.SendOpenClawConversationMessage)
+					r.Post("/dispatch", h.DispatchOpenClawConversation)
+				})
+				r.Get("/automations", h.ListOpenClawAutomations)
+				r.Post("/automations/sync", h.SyncOpenClawAutomations)
+				r.Post("/automations/{automationId}/commands/{commandId}", h.RunOpenClawAutomationCommand)
+			})
 
 			// Inbox
 			r.Route("/api/inbox", func(r chi.Router) {

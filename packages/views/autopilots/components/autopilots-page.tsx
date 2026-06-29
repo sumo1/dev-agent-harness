@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Zap, Play, Pause, AlertCircle, Newspaper, GitPullRequest, Bug, BarChart3, Shield, FileSearch } from "lucide-react";
+import type { ReactNode } from "react";
+import { Plus, Zap, Play, Pause, AlertCircle, Newspaper, GitPullRequest, Bug, BarChart3, Shield, FileSearch, CalendarClock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { autopilotListOptions } from "@multica/core/autopilots/queries";
+import { useOpenClawAutomationCommand } from "@multica/core/channels/openclaw-mutations";
+import { openClawAutomationsOptions } from "@multica/core/channels/openclaw-queries";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useActorName } from "@multica/core/workspace/hooks";
@@ -17,6 +20,7 @@ import { AutopilotDialog } from "./autopilot-dialog";
 import type { Autopilot, AutopilotStatus, AutopilotExecutionMode } from "@multica/core/types";
 import type { TriggerFrequency } from "./trigger-config";
 import { useT } from "../../i18n";
+import { ProviderLogo } from "../../runtimes/components/provider-logo";
 
 // Template-id keyed lookup for the i18n labels. Prompts stay raw English
 // because they're injected directly into the agent's task input — translating
@@ -127,6 +131,31 @@ const STATUS_VISUAL: Record<AutopilotStatus, { color: string; icon: typeof Zap }
   archived: { color: "text-muted-foreground", icon: AlertCircle },
 };
 
+type AutomationSourceFilter = "all" | "native" | "lobster";
+
+function SourceFilterButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-7 rounded-sm px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+        active && "bg-accent text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function AutopilotRow({ autopilot }: { autopilot: Autopilot }) {
   const { t } = useT("autopilots");
   const { getActorName } = useActorName();
@@ -182,10 +211,17 @@ function AutopilotRow({ autopilot }: { autopilot: Autopilot }) {
 
 export function AutopilotsPage() {
   const { t } = useT("autopilots");
+  const { t: tLobster } = useT("lobster");
   const wsId = useWorkspaceId();
   const { data: autopilots = [], isLoading } = useQuery(autopilotListOptions(wsId));
+  const { data: openClawAutomations, isLoading: openClawLoading } = useQuery(openClawAutomationsOptions(wsId));
+  const openClawAutomationCommand = useOpenClawAutomationCommand();
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<AutopilotTemplate | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<AutomationSourceFilter>("all");
+  const showNative = sourceFilter === "all" || sourceFilter === "native";
+  const showLobster = sourceFilter === "all" || sourceFilter === "lobster";
+  const lobsterItems = openClawAutomations?.automations ?? [];
 
   const openCreate = (template?: AutopilotTemplate) => {
     setSelectedTemplate(template ?? null);
@@ -209,9 +245,24 @@ export function AutopilotsPage() {
         </Button>
       </PageHeader>
 
+      <div className="flex items-center gap-1 border-b px-5 py-2">
+        <SourceFilterButton active={sourceFilter === "all"} onClick={() => setSourceFilter("all")}>
+          All
+        </SourceFilterButton>
+        <SourceFilterButton active={sourceFilter === "native"} onClick={() => setSourceFilter("native")}>
+          Native
+        </SourceFilterButton>
+        <SourceFilterButton active={sourceFilter === "lobster"} onClick={() => setSourceFilter("lobster")}>
+          <span className="inline-flex items-center gap-1">
+            <ProviderLogo provider="openclaw" className="size-3.5" />
+            {tLobster(($) => $.automations.channel)}
+          </span>
+        </SourceFilterButton>
+      </div>
+
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {showNative && isLoading ? (
           <>
             <div className="sticky top-0 z-[1] hidden h-8 items-center gap-2 border-b bg-muted/30 px-5 sm:flex">
               <span className="shrink-0 w-4" />
@@ -227,7 +278,7 @@ export function AutopilotsPage() {
               ))}
             </div>
           </>
-        ) : autopilots.length === 0 ? (
+        ) : showNative && autopilots.length === 0 && sourceFilter !== "all" ? (
           <div className="flex flex-col items-center py-16 px-5">
             <Zap className="h-10 w-10 mb-3 text-muted-foreground opacity-30" />
             <p className="text-sm text-muted-foreground">{t(($) => $.page.empty.title)}</p>
@@ -262,7 +313,7 @@ export function AutopilotsPage() {
               {t(($) => $.page.start_blank)}
             </Button>
           </div>
-        ) : (
+        ) : showNative ? (
           <>
             {/* Column headers */}
             <div className="sticky top-0 z-[1] hidden h-8 items-center gap-2 border-b bg-muted/30 px-5 text-xs font-medium text-muted-foreground sm:flex">
@@ -277,6 +328,69 @@ export function AutopilotsPage() {
               <AutopilotRow key={autopilot.id} autopilot={autopilot} />
             ))}
           </>
+        ) : null}
+
+        {showLobster && (
+          <section className={cn(showNative && "border-t")}>
+            <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 border-b bg-muted/30 px-5 text-xs font-medium text-muted-foreground">
+              <ProviderLogo provider="openclaw" className="size-3.5" />
+              {tLobster(($) => $.automations.channel)}
+              <span className="tabular-nums">{lobsterItems.length}</span>
+            </div>
+            {openClawLoading ? (
+              <div className="space-y-2 p-4 sm:space-y-1 sm:p-5">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[72px] w-full sm:h-11" />
+                ))}
+              </div>
+            ) : lobsterItems.length === 0 ? (
+              <div className="flex flex-col items-center px-5 py-12">
+                <CalendarClock className="mb-3 size-9 text-muted-foreground opacity-30" />
+                <p className="text-sm text-muted-foreground">{tLobster(($) => $.empty.automations)}</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {lobsterItems.map((item) => (
+                  <div key={item.id} className="flex flex-col gap-2 px-5 py-3 text-sm sm:h-12 sm:flex-row sm:items-center sm:gap-2 sm:py-0">
+                    <ProviderLogo provider="openclaw" className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
+                    <span className="text-xs text-muted-foreground sm:w-36 sm:shrink-0">
+                      {item.schedule ?? tLobster(($) => $.automations.schedule_empty)}
+                    </span>
+                    <span className="text-xs text-muted-foreground sm:w-24 sm:shrink-0 sm:text-center">
+                      {item.status}
+                    </span>
+                    <span className="text-xs text-muted-foreground sm:w-28 sm:shrink-0 sm:text-right">
+                      {item.next_run_at ?? tLobster(($) => $.automations.next_run_empty)}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 shrink-0"
+                      disabled={openClawAutomationCommand.isPending}
+                      onClick={() =>
+                        openClawAutomationCommand.mutate({
+                          automationId: item.id,
+                          command: item.status === "active" ? "pause" : "resume",
+                        })
+                      }
+                      aria-label={
+                        item.status === "active"
+                          ? tLobster(($) => $.actions.pause)
+                          : tLobster(($) => $.actions.resume)
+                      }
+                    >
+                      {item.status === "active" ? (
+                        <Pause className="size-3.5" />
+                      ) : (
+                        <Play className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </div>
 

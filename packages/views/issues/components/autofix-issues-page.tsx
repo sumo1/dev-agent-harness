@@ -703,18 +703,10 @@ function QuickActions({
 
   const openAction = useCallback(
     (key: QuickActionKey) => {
-      // Retry on a FAILED run can't be a chat message: a planning-failure (e.g.
-      // the LLM socket dropped mid-plan) leaves the run dead with no subtask to
-      // talk to, and sending to its discussion session does nothing. The true
-      // "retry the fix" re-triggers autofix, which spawns a fresh goal_run.
-      if (key === "retry" && status.state === "failed") {
-        startAutofix.mutate();
-        return;
-      }
       setOpenKey(key);
       setDraft(presetFor(key));
     },
-    [presetFor, status.state, startAutofix],
+    [presetFor],
   );
 
   const dispatch = useCallback(async () => {

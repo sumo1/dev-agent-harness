@@ -18,6 +18,7 @@ import enWorkingDirs from "./en/working-dirs.json";
 import enAutopilots from "./en/autopilots.json";
 import enSkills from "./en/skills.json";
 import enChat from "./en/chat.json";
+import enLobster from "./en/lobster.json";
 import enModals from "./en/modals.json";
 import enRuntimes from "./en/runtimes.json";
 import enLayout from "./en/layout.json";
@@ -44,6 +45,7 @@ import zhHansWorkingDirs from "./zh-Hans/working-dirs.json";
 import zhHansAutopilots from "./zh-Hans/autopilots.json";
 import zhHansSkills from "./zh-Hans/skills.json";
 import zhHansChat from "./zh-Hans/chat.json";
+import zhHansLobster from "./zh-Hans/lobster.json";
 import zhHansModals from "./zh-Hans/modals.json";
 import zhHansRuntimes from "./zh-Hans/runtimes.json";
 import zhHansLayout from "./zh-Hans/layout.json";
@@ -70,6 +72,7 @@ import koWorkingDirs from "./ko/working-dirs.json";
 import koAutopilots from "./ko/autopilots.json";
 import koSkills from "./ko/skills.json";
 import koChat from "./ko/chat.json";
+import koLobster from "./ko/lobster.json";
 import koModals from "./ko/modals.json";
 import koRuntimes from "./ko/runtimes.json";
 import koLayout from "./ko/layout.json";
@@ -96,6 +99,7 @@ import jaWorkingDirs from "./ja/working-dirs.json";
 import jaAutopilots from "./ja/autopilots.json";
 import jaSkills from "./ja/skills.json";
 import jaChat from "./ja/chat.json";
+import jaLobster from "./ja/lobster.json";
 import jaModals from "./ja/modals.json";
 import jaRuntimes from "./ja/runtimes.json";
 import jaLayout from "./ja/layout.json";
@@ -128,6 +132,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: enAutopilots,
     skills: enSkills,
     chat: enChat,
+    lobster: enLobster,
     modals: enModals,
     runtimes: enRuntimes,
     layout: enLayout,
@@ -156,6 +161,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: zhHansAutopilots,
     skills: zhHansSkills,
     chat: zhHansChat,
+    lobster: zhHansLobster,
     modals: zhHansModals,
     runtimes: zhHansRuntimes,
     layout: zhHansLayout,
@@ -184,6 +190,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: koAutopilots,
     skills: koSkills,
     chat: koChat,
+    lobster: koLobster,
     modals: koModals,
     runtimes: koRuntimes,
     layout: koLayout,
@@ -212,6 +219,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     autopilots: jaAutopilots,
     skills: jaSkills,
     chat: jaChat,
+    lobster: jaLobster,
     modals: jaModals,
     runtimes: jaRuntimes,
     layout: jaLayout,
