@@ -613,6 +613,7 @@ func TestBuildGoalPlanningPrompt(t *testing.T) {
 		GoalPlanningRunID: "goal-run-42",
 		GoalTitle:         "Refactor login",
 		GoalPlanningGoal:  "Refactor the whole login module",
+		ProjectID:         "proj-test", // project-bound so dialect guidance appears
 	})
 
 	mustContain := []string{
@@ -627,16 +628,13 @@ func TestBuildGoalPlanningPrompt(t *testing.T) {
 		"Do not execute the nodes yourself",        // planner must not do the work
 		"\"kind\":\"verify\"",                      // workflow design offers verify nodes
 		"adversarially review",                     // adversarial-verification guidance
-		// Parallelism-first steering: the planner must fan out independent
-		// work instead of defaulting to a chain. These guard against the prompt
-		// silently regressing to the old chain-only shape, which collapsed every
-		// plan to sequential execution.
-		"PARALLELISM FIRST",                        // explicit directive
-		"runs multiple independent subtasks",       // same-coder parallelism is allowed
-		"parallel fan-out, then converge",          // the worked example is a fan-out, not a chain
-		"CROSS-MODEL CHECK",                        // verify nodes should prefer a different model
-		"DIFFERENT model than the node it reviews", // explicit cross-model steering
-		"blind to its own mistakes",                // the rationale, so it isn't dropped as noise
+		"DUAL CONTRACT",                            // every spec pairs construction + acceptance
+		"acceptance",                               // acceptance criteria mentioned explicitly
+		"Match THIS project's own contract dialect", // project-bound goals inherit dialect
+		"do NOT impose a fixed template",           // anti-template line for project-bound goals
+		"docs/task/*/plan",                         // where to find project's existing contracts
+		"DIFFERENT model than the node it reviews", // cross-model verification guidance (survives)
+		"blind to its own mistakes",                // cross-model rationale
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {
@@ -644,10 +642,12 @@ func TestBuildGoalPlanningPrompt(t *testing.T) {
 		}
 	}
 
-	// The worked example must contain at least three first-wave nodes
-	// (depends_on:[]) so the model copies a fan-out, not a single root.
+	// The INDEPENDENT CONSTRUCTION example must still show a multi-node first
+	// wave (>=3 depends_on:[]) to teach parallel fan-out when truly warranted.
+	// (The rewrite added a COHERENT COGNITIVE WORK example that is deliberately
+	// single-node; this count validates the construction example specifically.)
 	if strings.Count(out, "\"depends_on\":[]") < 3 {
-		t.Errorf("goal planning example must show a multi-node first wave (>=3 depends_on:[] nodes), got:\n%s", out)
+		t.Errorf("goal planning construction example must show a multi-node first wave (>=3 depends_on:[] nodes), got:\n%s", out)
 	}
 }
 
